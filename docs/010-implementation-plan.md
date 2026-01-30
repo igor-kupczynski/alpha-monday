@@ -61,8 +61,20 @@ References: HLD `docs/001-high-level-design.md` (Workflows, Components), LLD `do
 ## 4) Picks + initial snapshot
 References: HLD `docs/001-high-level-design.md` (Weekly Pick Workflow), LLD `docs/006-integrations-openai.md`, `docs/007-integrations-alpha-vantage.md`, `docs/004-worker-service.md`
 
-- [ ] Implement OpenAI pick generation and validation.
-- [ ] Fetch initial prices (picks + SPY) and persist batch/picks.
+### Tests first
+- [ ] OpenAI parsing/validation tests: invalid JSON, wrong count, dup tickers, bad action -> retries then fail.
+- [ ] Price snapshot tests: SPY + picks price map; fallback to previous close; fail when any price missing after fallback.
+- [ ] DB write tests: transaction inserts batch + picks + initial checkpoint; re-run is idempotent by run_date.
+
+### Implementation
+- [ ] Add OpenAI client wrapper with strict JSON schema and retry-on-invalid output.
+- [ ] Implement pick validation (count=3, unique, BUY|SELL, ticker format; optional S&P 500 allowlist).
+- [ ] Implement Alpha Vantage snapshot client (SPY first, then picks) with fallback-to-previous-close logic.
+- [ ] Add workflow steps: generate picks -> snapshot prices -> persist batch/picks/initial checkpoint.
+- [ ] Persist batch+pick+initial checkpoint in one transaction; use run_date unique to guard reruns.
+- [ ] Log pick list, price source (last vs previous close), and created IDs.
+
+**Goal:** Weekly workflow creates (or reuses) the run_date batch with 3 validated picks and an initial checkpoint containing SPY + pick prices.
 
 **Working feature:** Weekly run creates a batch with picks and initial prices stored.
 
