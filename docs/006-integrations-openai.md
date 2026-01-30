@@ -6,8 +6,12 @@ Date: 2026-01-30
 Uses OpenAI to generate 3 S&P 500 stock picks with BUY/SELL and reasoning.
 
 ## Model Selection
-- Model: configurable via env var (default to a small/fast model suitable for JSON extraction).
+- Model: configurable via env var (default `gpt-4o-mini`, a small/fast model suitable for JSON extraction).
 - Use low temperature for consistency (e.g., 0.2).
+
+## Environment Variables
+- `OPENAI_API_KEY` (required)
+- `OPENAI_MODEL` (optional, defaults to `gpt-4o-mini`)
 
 ## Prompt Design
 - System: concise instructions for analyst-style picks.

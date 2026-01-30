@@ -11,8 +11,13 @@ import (
 
 	hatchetclient "github.com/hatchet-dev/hatchet/pkg/client"
 	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
+	"github.com/igor-kupczynski/alpha-monday/internal/db"
+	"github.com/igor-kupczynski/alpha-monday/internal/integrations/alphavantage"
+	"github.com/igor-kupczynski/alpha-monday/internal/integrations/openai"
 	appworker "github.com/igor-kupczynski/alpha-monday/internal/worker"
 	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -47,6 +52,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("db pool init failed", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	store := db.NewStore(pool)
+	openAIClient := openai.NewClient(cfg.OpenAIAPIKey, openai.WithModel(cfg.OpenAIModel))
+	alphaClient := alphavantage.NewClient(cfg.AlphaVantageAPIKey)
+	steps := appworker.NewSteps(store, openAIClient, alphaClient, logger)
+
 	w, err := hatchetworker.NewWorker(
 		hatchetworker.WithClient(client),
 		hatchetworker.WithName(cfg.WorkerName),
@@ -56,7 +73,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := appworker.RegisterWorkflows(w, logger); err != nil {
+	if err := appworker.RegisterWorkflows(w, logger, steps); err != nil {
 		logger.Error("workflow registration failed", "error", err)
 		os.Exit(1)
 	}

@@ -57,25 +57,30 @@ func workflowSpecs() []workflowSpec {
 	}
 }
 
-func buildWorkflow(spec workflowSpec, logger *slog.Logger) *hatchetworker.WorkflowJob {
+func buildWorkflow(spec workflowSpec, logger *slog.Logger, stepDeps *Steps) *hatchetworker.WorkflowJob {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	steps := make([]*hatchetworker.WorkflowStep, 0, len(spec.Steps))
+	workflowSteps := make([]*hatchetworker.WorkflowStep, 0, len(spec.Steps))
 	var previous *hatchetworker.WorkflowStep
+	handlers := stepHandlers(stepDeps, logger)
 	for _, step := range spec.Steps {
-		current := hatchetworker.Fn(noopStep(logger, step.ID)).SetName(step.ID)
+		handler := handlers[step.ID]
+		if handler == nil {
+			handler = noopStep(logger, step.ID)
+		}
+		current := hatchetworker.Fn(handler).SetName(step.ID)
 		if previous != nil {
 			current.AddParents(previous.Name)
 		}
-		steps = append(steps, current)
+		workflowSteps = append(workflowSteps, current)
 		previous = current
 	}
 
 	job := &hatchetworker.WorkflowJob{
 		Name:  spec.ID,
-		Steps: steps,
+		Steps: workflowSteps,
 	}
 
 	if spec.Schedule != "" {
@@ -83,6 +88,17 @@ func buildWorkflow(spec workflowSpec, logger *slog.Logger) *hatchetworker.Workfl
 	}
 
 	return job
+}
+
+func stepHandlers(steps *Steps, logger *slog.Logger) map[string]any {
+	handlers := map[string]any{}
+	if steps != nil {
+		handlers[StepGeneratePicksID] = steps.GeneratePicks
+		handlers[StepSnapshotPricesID] = steps.SnapshotInitialPrices
+		handlers[StepPersistBatchID] = steps.PersistBatch
+	}
+	handlers[DailyCheckpointStepID] = noopStep(logger, DailyCheckpointStepID)
+	return handlers
 }
 
 func noopStep(logger *slog.Logger, stepName string) func(hatchetworker.HatchetContext) error {

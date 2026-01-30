@@ -7,7 +7,7 @@ import (
 	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
 )
 
-func RegisterWorkflows(w *hatchetworker.Worker, logger *slog.Logger) error {
+func RegisterWorkflows(w *hatchetworker.Worker, logger *slog.Logger, steps *Steps) error {
 	if w == nil {
 		return fmt.Errorf("worker is nil")
 	}
@@ -16,7 +16,7 @@ func RegisterWorkflows(w *hatchetworker.Worker, logger *slog.Logger) error {
 	}
 
 	for _, spec := range workflowSpecs() {
-		workflow := buildWorkflow(spec, logger)
+		workflow := buildWorkflow(spec, logger, steps)
 		if err := w.RegisterWorkflow(workflow); err != nil {
 			return fmt.Errorf("register workflow %s: %w", spec.ID, err)
 		}

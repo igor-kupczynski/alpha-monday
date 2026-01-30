@@ -6,6 +6,8 @@ import (
 )
 
 func TestLoadConfigRequiresHatchetToken(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("ALPHA_VANTAGE_API_KEY", "alpha")
 	t.Setenv("HATCHET_CLIENT_TOKEN", "")
 
 	_, err := LoadConfig()
@@ -15,6 +17,9 @@ func TestLoadConfigRequiresHatchetToken(t *testing.T) {
 }
 
 func TestLoadConfigDefaults(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("OPENAI_MODEL", "")
+	t.Setenv("ALPHA_VANTAGE_API_KEY", "alpha")
 	t.Setenv("HATCHET_CLIENT_TOKEN", "token")
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("HATCHET_WORKER_NAME", "")
@@ -31,6 +36,10 @@ func TestLoadConfigDefaults(t *testing.T) {
 
 	if cfg.LogLevel != slog.LevelInfo {
 		t.Fatalf("expected default log level info, got %v", cfg.LogLevel)
+	}
+
+	if cfg.OpenAIModel != defaultOpenAIModel {
+		t.Fatalf("expected default openai model %q, got %q", defaultOpenAIModel, cfg.OpenAIModel)
 	}
 
 	if cfg.HatchetClientHostPort != "" {

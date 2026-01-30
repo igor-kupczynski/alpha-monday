@@ -19,6 +19,7 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 ## Environment Variables
 - DATABASE_URL
 - OPENAI_API_KEY
+- OPENAI_MODEL (default: gpt-4o-mini)
 - ALPHA_VANTAGE_API_KEY
 - HATCHET_CLIENT_TOKEN
 - HATCHET_CLIENT_HOST_PORT (required if not embedded in token)
@@ -29,6 +30,7 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 - Insert batch first, then picks, then initial checkpoint (all in one transaction).
 - Use upsert on checkpoints by (batch_id, checkpoint_date) if retries happen.
 - Guard weekly reruns via run_date unique constraint; on conflict, fail fast.
+- Initial checkpoint stores benchmark_price and leaves benchmark_return_pct null to represent the baseline snapshot.
 
 ## Idempotency
 - Ensure steps can be retried safely:

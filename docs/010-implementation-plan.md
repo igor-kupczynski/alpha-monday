@@ -75,17 +75,17 @@ References: HLD `docs/001-high-level-design.md` (Workflows, Components), LLD `do
 References: HLD `docs/001-high-level-design.md` (Weekly Pick Workflow), LLD `docs/006-integrations-openai.md`, `docs/007-integrations-alpha-vantage.md`, `docs/004-worker-service.md`
 
 ### Tests first
-- [ ] OpenAI parsing/validation tests: invalid JSON, wrong count, dup tickers, bad action -> retries then fail.
-- [ ] Price snapshot tests: SPY + picks previous-close map; fail when any previous close missing.
-- [ ] DB write tests: transaction inserts batch + picks + initial checkpoint; re-run fails fast by run_date.
+- [x] OpenAI parsing/validation tests: invalid JSON, wrong count, dup tickers, bad action -> retries then fail.
+- [x] Price snapshot tests: SPY + picks previous-close map; fail when any previous close missing.
+- [x] DB write tests: transaction inserts batch + picks + initial checkpoint; re-run fails fast by run_date.
 
 ### Implementation
-- [ ] Add OpenAI client wrapper with strict JSON schema and retry-on-invalid output.
-- [ ] Implement pick validation (count=3, unique, BUY|SELL, ticker format; no S&P 500 allowlist).
-- [ ] Implement Alpha Vantage snapshot client (SPY first, then picks) using previous close only.
-- [ ] Add workflow steps: generate picks -> snapshot prices -> persist batch/picks/initial checkpoint.
-- [ ] Persist batch+pick+initial checkpoint in one transaction; fail fast on run_date conflicts.
-- [ ] Log pick list and created IDs.
+- [x] Add OpenAI client wrapper with strict JSON schema and retry-on-invalid output.
+- [x] Implement pick validation (count=3, unique, BUY|SELL, ticker format; no S&P 500 allowlist).
+- [x] Implement Alpha Vantage snapshot client (SPY first, then picks) using previous close only.
+- [x] Add workflow steps: generate picks -> snapshot prices -> persist batch/picks/initial checkpoint.
+- [x] Persist batch+pick+initial checkpoint in one transaction; fail fast on run_date conflicts.
+- [x] Log pick list and created IDs.
 
 **Goal:** Weekly workflow creates the run_date batch with 3 validated picks and an initial checkpoint containing SPY + pick previous-close prices. If the run_date already exists, the workflow fails fast.
 
@@ -108,6 +108,7 @@ References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computat
       - Cons: less intuitive for US market context.
   - Industry standard: end-of-day close for daily performance metrics.
   - Recommendation: use 9am ET for v1 simplicity and to align with HLD; document that daily snapshots may reflect previous close.
+  - Decision: TBD.
 - [ ] **Missing-price handling for checkpoints**
   - Options:
     - Skip entire checkpoint if SPY missing or any pick missing.
@@ -121,6 +122,7 @@ References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computat
       - Cons: hides data gaps; adds rules.
   - Industry standard: skip or carry-forward depending on analytics needs; for minimal systems, skip.
   - Recommendation: skip entire checkpoint when SPY missing or any pick missing (per LLD).
+  - Decision: TBD.
 
 ### Tests first
 - [ ] Checkpoint loop tests: 14 calendar days, durable sleep scheduling, and batch completion.
@@ -155,6 +157,7 @@ References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Obse
       - Cons: longer workflow duration.
   - Industry standard: exponential backoff with jitter and a cap.
   - Recommendation: 3-5 attempts, cap at ~60s per retry to stay within workflow SLAs.
+  - Decision: TBD.
 - [ ] **Rate limit enforcement location**
   - Options:
     - Hatchet rate limiter only.
@@ -165,6 +168,7 @@ References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Obse
       - Cons: more code complexity.
   - Industry standard: orchestrator + client guard for external APIs.
   - Recommendation: Hatchet limiter + concurrency caps; add a lightweight client guard only if needed.
+  - Decision: TBD.
 - [ ] **Log format**
   - Options:
     - Structured JSON logs.
@@ -175,6 +179,7 @@ References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Obse
       - Cons: harder to query.
   - Industry standard: structured logs with workflow/step IDs.
   - Recommendation: structured logs if logger already supports it; otherwise key=value text.
+  - Decision: TBD.
 
 ### Implementation
 - [ ] Configure Hatchet rate limiting (5 req/min) and fan-out concurrency (2-3).
@@ -202,6 +207,7 @@ References: HLD `docs/001-high-level-design.md` (Deployment), LLD `docs/009-depl
       - Cons: adds another provider.
   - Industry standard: deploy API + worker on the same managed container platform when possible.
   - Recommendation: use Scaleway for API if HTTP ingress is straightforward; otherwise choose a managed HTTP platform with minimal ops.
+  - Decision: TBD.
 - [ ] **Deployment pipeline**
   - Options:
     - Manual build + push + deploy.
@@ -215,6 +221,7 @@ References: HLD `docs/001-high-level-design.md` (Deployment), LLD `docs/009-depl
       - Cons: riskier for early-stage changes.
   - Industry standard: CI builds with immutable tags; deploy via manual approval.
   - Recommendation: CI build/push with manual deploy for v1.
+  - Decision: TBD.
 - [ ] **Migration execution**
   - Options:
     - One-off migration job (manual or CI) before deploy.
@@ -225,6 +232,7 @@ References: HLD `docs/001-high-level-design.md` (Deployment), LLD `docs/009-depl
       - Cons: risky in production; harder to roll back.
   - Industry standard: run migrations as a separate job with explicit approval.
   - Recommendation: one-off migration job before deploy.
+  - Decision: TBD.
 
 ### Implementation
 - [ ] Containerize API and worker.
