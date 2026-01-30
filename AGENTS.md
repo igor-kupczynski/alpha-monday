@@ -6,3 +6,4 @@
 - If you modify code, write or update tests first (to catch the failure), then update code.
 - Keep HLD and LLD docs up to date with any behavioral or architectural changes.
 - It's OK to iterate on the docs.
+- When we make any decisions do update the LLDs and HLDs to reflect those decisions. Don't ask "should we update the docs?" Just do it.
