@@ -74,45 +74,199 @@ References: HLD `docs/001-high-level-design.md` (Workflows, Components), LLD `do
 ## 4) Picks + initial snapshot
 References: HLD `docs/001-high-level-design.md` (Weekly Pick Workflow), LLD `docs/006-integrations-openai.md`, `docs/007-integrations-alpha-vantage.md`, `docs/004-worker-service.md`
 
+### Open decisions (resolve before implementation)
+- [ ] **LLM output enforcement approach**
+  - Options:
+    - Structured output/JSON schema enforcement (if SDK supports).
+      - Pros: highest parse reliability, fewer retries.
+      - Cons: tighter coupling to provider/SDK.
+    - JSON mode / function-call style with manual validation.
+      - Pros: widely supported, still structured.
+      - Cons: requires strict validation + retries.
+    - Prompt-only JSON with best-effort parsing.
+      - Pros: simplest integration.
+      - Cons: most brittle; highest retry/ops cost.
+  - Industry standard: use structured outputs (or JSON mode) with strict validation and retry.
+  - Recommendation: prefer structured output if available; otherwise JSON mode + validation with max 2 attempts (per LLD).
+- [ ] **Baseline storage: day-0 checkpoint vs baseline-only fields**
+  - Options:
+    - Store baseline only in `batches.benchmark_initial_price` and `picks.initial_price` (no checkpoint row).
+      - Pros: matches current schema and LLD; simpler queries; avoids synthetic checkpoint.
+      - Cons: baseline not queryable as a checkpoint time series point.
+    - Create a checkpoint row on `run_date` to represent baseline.
+      - Pros: unified time series, consistent API output shape.
+      - Cons: adds semantics not in LLD; must define day-0 metrics (likely zero).
+  - Industry standard: store baseline separately and start time series on day 1.
+  - Recommendation: keep baseline only in batches/picks; start checkpoints on day 1..14.
+
 ### Tests first
 - [ ] OpenAI parsing/validation tests: invalid JSON, wrong count, dup tickers, bad action -> retries then fail.
 - [ ] Price snapshot tests: SPY + picks previous-close map; fail when any previous close missing.
-- [ ] DB write tests: transaction inserts batch + picks + initial checkpoint; re-run fails fast by run_date.
+- [ ] DB write tests: transaction inserts batch + picks (baseline in batch/picks); re-run fails fast by run_date.
 
 ### Implementation
 - [ ] Add OpenAI client wrapper with strict JSON schema and retry-on-invalid output.
 - [ ] Implement pick validation (count=3, unique, BUY|SELL, ticker format; no S&P 500 allowlist).
 - [ ] Implement Alpha Vantage snapshot client (SPY first, then picks) using previous close only.
-- [ ] Add workflow steps: generate picks -> snapshot prices -> persist batch/picks/initial checkpoint.
-- [ ] Persist batch+pick+initial checkpoint in one transaction; fail fast on run_date conflicts.
+- [ ] Add workflow steps: generate picks -> snapshot prices -> persist batch + picks.
+- [ ] Persist batch + picks in one transaction; fail fast on run_date conflicts.
 - [ ] Log pick list and created IDs.
 
-**Goal:** Weekly workflow creates the run_date batch with 3 validated picks and an initial checkpoint containing SPY + pick previous-close prices. If the run_date already exists, the workflow fails fast.
+**Goal:** Weekly workflow creates the run_date batch with 3 validated picks and baseline prices from previous close. If the run_date already exists, the workflow fails fast.
 
 **Working feature:** Weekly run creates a batch with picks and initial prices stored.
+
+**Success criteria:**
+- A weekly run inserts exactly 1 batch and 3 picks with baseline prices populated from previous close (SPY + picks).
+- Invalid LLM output is retried and then fails the step after 2 attempts with a clear error.
+- Re-running for the same run_date fails fast (no partial inserts).
+- Logs include pick tickers/actions and created IDs.
 
 ## 5) Daily checkpoints and metrics
 References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computation), LLD `docs/005-workflows-hatchet.md`, `docs/008-computation-metrics.md`, `docs/007-integrations-alpha-vantage.md`
 
-- [ ] Implement durable sleep + daily loop for 14 days.
-- [ ] Fetch daily prices, handle market-closed cases, compute metrics, persist checkpoints.
+### Open decisions (resolve before implementation)
+- [ ] **Daily checkpoint time**
+  - Options:
+    - 9am ET (align with weekly run; simple).
+      - Pros: matches HLD example; simple scheduling.
+      - Cons: often before market open; may reflect previous close.
+    - Market close (end-of-day).
+      - Pros: matches end-of-day analytics; clearer daily performance.
+      - Cons: more timezone/holiday handling; longer waits.
+    - Fixed UTC time (e.g., 14:00 UTC).
+      - Pros: deterministic across timezones.
+      - Cons: less intuitive for US market context.
+  - Industry standard: end-of-day close for daily performance metrics.
+  - Recommendation: use 9am ET for v1 simplicity and to align with HLD; document that daily snapshots may reflect previous close.
+- [ ] **Missing-price handling for checkpoints**
+  - Options:
+    - Skip entire checkpoint if SPY missing or any pick missing.
+      - Pros: simplest; matches LLD.
+      - Cons: loses partial data.
+    - Allow partial checkpoints (per-pick nulls).
+      - Pros: retains partial data.
+      - Cons: complicates schema/API and metrics.
+    - Carry-forward last close for missing tickers.
+      - Pros: continuous series.
+      - Cons: hides data gaps; adds rules.
+  - Industry standard: skip or carry-forward depending on analytics needs; for minimal systems, skip.
+  - Recommendation: skip entire checkpoint when SPY missing or any pick missing (per LLD).
+
+### Tests first
+- [ ] Checkpoint loop tests: 14 calendar days, durable sleep scheduling, and batch completion.
+- [ ] Market-closed tests: SPY missing -> checkpoint skipped; pick missing -> checkpoint skipped.
+- [ ] Metrics tests: absolute_return_pct and vs_benchmark_pct formulas; reject non-finite values.
+
+### Implementation
+- [ ] Implement durable sleep + daily loop for 14 calendar days (day 1..14).
+- [ ] Fetch daily prices with fan-out + concurrency cap; detect market-closed cases.
+- [ ] Compute metrics per LLD and persist checkpoints + pick_checkpoint_metrics.
+- [ ] Mark batch status completed after day 14 checkpoint (computed or skipped).
 
 **Working feature:** Checkpoints are created daily with metrics or skipped status.
+
+**Success criteria:**
+- For each of 14 calendar days, exactly one checkpoint is written with status computed or skipped.
+- Metrics match formulas in `docs/008-computation-metrics.md` and are stored without rounding.
+- Missing SPY or any pick results in a skipped checkpoint (no partial metrics).
+- Batch status becomes `completed` after day 14 checkpoint.
 
 ## 6) Reliability and limits
 References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Observability), LLD `docs/005-workflows-hatchet.md`, `docs/004-worker-service.md`
 
-- [ ] Configure Hatchet rate limiting and fan-out concurrency.
-- [ ] Add retries with exponential backoff for transient API failures.
-- [ ] Log workflow lifecycle and errors (stdout).
+### Open decisions (resolve before implementation)
+- [ ] **Retry policy parameters**
+  - Options:
+    - 3 attempts with exponential backoff + jitter (short total delay).
+      - Pros: quick recovery; minimal runtime.
+      - Cons: fewer chances for flaky APIs.
+    - 5 attempts with capped exponential backoff + jitter.
+      - Pros: higher resilience.
+      - Cons: longer workflow duration.
+  - Industry standard: exponential backoff with jitter and a cap.
+  - Recommendation: 3-5 attempts, cap at ~60s per retry to stay within workflow SLAs.
+- [ ] **Rate limit enforcement location**
+  - Options:
+    - Hatchet rate limiter only.
+      - Pros: centralized control.
+      - Cons: relies on orchestrator correctness.
+    - Hatchet + client-side guard (token bucket).
+      - Pros: extra safety and local control.
+      - Cons: more code complexity.
+  - Industry standard: orchestrator + client guard for external APIs.
+  - Recommendation: Hatchet limiter + concurrency caps; add a lightweight client guard only if needed.
+- [ ] **Log format**
+  - Options:
+    - Structured JSON logs.
+      - Pros: easier aggregation/search; industry standard.
+      - Cons: slightly more setup.
+    - Plain text logs.
+      - Pros: simplest.
+      - Cons: harder to query.
+  - Industry standard: structured logs with workflow/step IDs.
+  - Recommendation: structured logs if logger already supports it; otherwise key=value text.
+
+### Implementation
+- [ ] Configure Hatchet rate limiting (5 req/min) and fan-out concurrency (2-3).
+- [ ] Add retries with exponential backoff + jitter for transient API failures.
+- [ ] Log workflow lifecycle and errors (stdout) with workflow/step identifiers.
 
 **Working feature:** Workflow runs reliably without violating API limits and produces useful logs.
+
+**Success criteria:**
+- No run exceeds Alpha Vantage limits during fan-out (verified in logs).
+- Transient API errors are retried and do not fail the entire workflow unless retries exhaust.
+- Logs include workflow ID, step name, and error context for failures.
 
 ## 7) Deployment slice
 References: HLD `docs/001-high-level-design.md` (Deployment), LLD `docs/009-deployment-ops.md`
 
+### Open decisions (resolve before implementation)
+- [ ] **API hosting target**
+  - Options:
+    - Scaleway Serverless Containers (same as worker).
+      - Pros: fewer providers; shared tooling.
+      - Cons: may require more setup for public HTTP.
+    - Managed HTTP platform (Fly.io/Render/Railway).
+      - Pros: fast HTTP deploys; simple routing.
+      - Cons: adds another provider.
+  - Industry standard: deploy API + worker on the same managed container platform when possible.
+  - Recommendation: use Scaleway for API if HTTP ingress is straightforward; otherwise choose a managed HTTP platform with minimal ops.
+- [ ] **Deployment pipeline**
+  - Options:
+    - Manual build + push + deploy.
+      - Pros: fastest to start.
+      - Cons: manual errors; no audit trail.
+    - CI build/push with tagged images and manual deploy.
+      - Pros: repeatable artifacts; minimal automation.
+      - Cons: some CI setup.
+    - CI build + auto-deploy on main.
+      - Pros: fully automated.
+      - Cons: riskier for early-stage changes.
+  - Industry standard: CI builds with immutable tags; deploy via manual approval.
+  - Recommendation: CI build/push with manual deploy for v1.
+- [ ] **Migration execution**
+  - Options:
+    - One-off migration job (manual or CI) before deploy.
+      - Pros: explicit control; standard practice.
+      - Cons: extra step.
+    - Run migrations on API startup.
+      - Pros: simple.
+      - Cons: risky in production; harder to roll back.
+  - Industry standard: run migrations as a separate job with explicit approval.
+  - Recommendation: one-off migration job before deploy.
+
+### Implementation
 - [ ] Containerize API and worker.
 - [ ] Deploy worker to Scaleway; configure Hatchet cron.
 - [ ] Deploy API and connect to Neon.
+- [ ] Apply migrations on Neon before first deploy.
 
 **Working feature:** System runs end-to-end on hosted infrastructure.
+
+**Success criteria:**
+- API container responds to `/health` in hosted environment.
+- Worker container starts, registers workflows, and receives cron triggers.
+- Neon DB has schema applied and workflow writes succeed.
+- Secrets are stored in provider secret manager or env injection (no local `.env`).
