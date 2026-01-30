@@ -94,11 +94,9 @@ References: HLD `docs/001-high-level-design.md` (Weekly Pick Workflow), LLD `doc
 ## 5) Daily checkpoints and metrics
 References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computation), LLD `docs/005-workflows-hatchet.md`, `docs/008-computation-metrics.md`, `docs/007-integrations-alpha-vantage.md`
 
-### Decisions (resolved)
-- [x] **Daily checkpoint time**
-  - Decision: Run daily at 9am ET, but always use previous trading day close for prices; checkpoint_date is the previous trading day (can be before run_date for the first checkpoint).
-- [x] **Missing-price handling for checkpoints**
-  - Decision: If previous close is missing for SPY or any pick, skip the entire checkpoint.
+### Constraints
+- Daily run time is 9am ET, but prices always use previous trading day close; checkpoint_date is that trading day (can be before run_date on day 1).
+- If previous close is missing for SPY or any pick, skip the entire checkpoint.
 
 ### Tests first
 - [ ] Checkpoint loop tests: 14 calendar days, durable sleep scheduling, checkpoint_date uses previous trading day (can be before run_date), and batch completion.
@@ -122,13 +120,10 @@ References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computat
 ## 6) Reliability and limits
 References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Observability), LLD `docs/005-workflows-hatchet.md`, `docs/004-worker-service.md`
 
-### Decisions (resolved)
-- [x] **Retry policy parameters**
-  - Decision: 3 attempts with exponential backoff + jitter.
-- [x] **Rate limit enforcement location**
-  - Decision: Hatchet rate limiter only (no client-side guard in v1).
-- [x] **Log format**
-  - Decision: Structured JSON logs (use existing slog JSON handler).
+### Constraints
+- Retries: 3 attempts with exponential backoff + jitter.
+- Rate limiting: Hatchet rate limiter only (no client-side guard in v1).
+- Logs: structured JSON (slog JSON handler).
 
 ### Implementation
 - [ ] Configure Hatchet rate limiting (5 req/min) and fan-out concurrency (2-3).
@@ -145,13 +140,10 @@ References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Obse
 ## 7) Deployment slice
 References: HLD `docs/001-high-level-design.md` (Deployment), LLD `docs/009-deployment-ops.md`
 
-### Decisions (resolved)
-- [x] **API hosting target**
-  - Decision: Scaleway Serverless Containers for API and worker.
-- [x] **Deployment pipeline**
-  - Decision: CI build/push with tagged images and manual deploy.
-- [x] **Migration execution**
-  - Decision: Run migrations as a separate job with explicit approval.
+### Constraints
+- API and worker run on Scaleway Serverless Containers.
+- CI builds/pushes tagged images; deploys are manual approvals.
+- Migrations run as a separate job with explicit approval.
 
 ### Implementation
 - [ ] Containerize API and worker.
