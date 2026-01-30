@@ -28,16 +28,16 @@ References: HLD `docs/001-high-level-design.md` (Data Model), LLD `docs/002-data
 References: HLD `docs/001-high-level-design.md` (API, Components), LLD `docs/003-api-service.md`
 
 ### Tests first
-- [ ] Create API query tests for latest batch, batch list pagination, and batch details.
-- [ ] Add handler tests for `/health`, `/latest`, `/batches`, `/batches/{id}` (empty state, invalid params, not found).
+- [x] Create API query tests for latest batch, batch list pagination, and batch details.
+- [x] Add handler tests for `/health`, `/latest`, `/batches`, `/batches/{id}` (empty state, invalid params, not found).
 
 ### API implementation
-- [ ] Initialize Go module structure (`cmd/api`, `internal/api`, `internal/db`).
-- [ ] Add config loading for `DATABASE_URL`, `PORT`, `LOG_LEVEL`, `CORS_ALLOW_ORIGINS`.
-- [ ] Set up HTTP server with chi router, middlewares, and timeouts.
-- [ ] Implement DB pool (pgxpool) and query layer for latest, list, and detail reads.
-- [ ] Implement `/health`, `/latest`, `/batches`, `/batches/{id}` handlers.
-- [ ] Add response/error helpers and JSON serialization for numeric strings.
+- [x] Initialize Go module structure (`cmd/api`, `internal/api`, `internal/db`).
+- [x] Add config loading for `DATABASE_URL`, `PORT`, `LOG_LEVEL`, `CORS_ALLOW_ORIGINS`.
+- [x] Set up HTTP server with chi router, middlewares, and timeouts.
+- [x] Implement DB pool (pgxpool) and query layer for latest, list, and detail reads.
+- [x] Implement `/health`, `/latest`, `/batches`, `/batches/{id}` handlers.
+- [x] Add response/error helpers and JSON serialization for numeric strings.
 
 **Working feature:** API serves batch data (even if empty) from Postgres.
 
@@ -63,18 +63,18 @@ References: HLD `docs/001-high-level-design.md` (Weekly Pick Workflow), LLD `doc
 
 ### Tests first
 - [ ] OpenAI parsing/validation tests: invalid JSON, wrong count, dup tickers, bad action -> retries then fail.
-- [ ] Price snapshot tests: SPY + picks price map; fallback to previous close; fail when any price missing after fallback.
-- [ ] DB write tests: transaction inserts batch + picks + initial checkpoint; re-run is idempotent by run_date.
+- [ ] Price snapshot tests: SPY + picks previous-close map; fail when any previous close missing.
+- [ ] DB write tests: transaction inserts batch + picks + initial checkpoint; re-run fails fast by run_date.
 
 ### Implementation
 - [ ] Add OpenAI client wrapper with strict JSON schema and retry-on-invalid output.
-- [ ] Implement pick validation (count=3, unique, BUY|SELL, ticker format; optional S&P 500 allowlist).
-- [ ] Implement Alpha Vantage snapshot client (SPY first, then picks) with fallback-to-previous-close logic.
+- [ ] Implement pick validation (count=3, unique, BUY|SELL, ticker format; no S&P 500 allowlist).
+- [ ] Implement Alpha Vantage snapshot client (SPY first, then picks) using previous close only.
 - [ ] Add workflow steps: generate picks -> snapshot prices -> persist batch/picks/initial checkpoint.
-- [ ] Persist batch+pick+initial checkpoint in one transaction; use run_date unique to guard reruns.
-- [ ] Log pick list, price source (last vs previous close), and created IDs.
+- [ ] Persist batch+pick+initial checkpoint in one transaction; fail fast on run_date conflicts.
+- [ ] Log pick list and created IDs.
 
-**Goal:** Weekly workflow creates (or reuses) the run_date batch with 3 validated picks and an initial checkpoint containing SPY + pick prices.
+**Goal:** Weekly workflow creates the run_date batch with 3 validated picks and an initial checkpoint containing SPY + pick previous-close prices. If the run_date already exists, the workflow fails fast.
 
 **Working feature:** Weekly run creates a batch with picks and initial prices stored.
 

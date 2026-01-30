@@ -26,7 +26,7 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 ## DB Write Patterns
 - Insert batch first, then picks, then initial checkpoint (all in one transaction).
 - Use upsert on checkpoints by (batch_id, checkpoint_date) if retries happen.
-- Guard weekly reruns via run_date unique constraint; on conflict, load existing batch and continue.
+- Guard weekly reruns via run_date unique constraint; on conflict, fail fast.
 
 ## Idempotency
 - Ensure steps can be retried safely:

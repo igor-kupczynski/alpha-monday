@@ -65,7 +65,7 @@ This document is the high-level design. Component-specific low-level design docs
 Trigger: Every Monday 9am ET.
 Steps:
 1. Generate picks (LLM) with constraint: S&P 500.
-2. Snapshot initial prices for 3 picks + SPY (latest price; fallback to previous close if market closed).
+2. Snapshot initial prices for 3 picks + SPY using previous close only (no intraday).
 3. Persist batch creation and initial snapshot data.
 4. For day in 1..14:
    - Durable sleep until next day at a fixed time (e.g., 9am ET).

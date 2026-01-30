@@ -35,4 +35,4 @@ Example JSON:
 - If still invalid: fail workflow and emit event.
 
 ## Notes
-- Optionally add a validation step against a cached S&P 500 ticker list.
+- Do not enforce an S&P 500 allowlist in v1; rely on the prompt constraint.

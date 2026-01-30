@@ -22,8 +22,8 @@ Fetches stock prices for picks and SPY from Alpha Vantage.
 
 ## Market Closed Logic
 - Initial snapshot:
-  - If SPY price missing, attempt previous close as fallback.
-  - If any pick price missing after fallback, fail the step to allow retry (no partial baseline).
+  - Always use previous close for baseline prices (no intraday data).
+  - If any previous close price is missing, fail the step to allow retry (no partial baseline).
 - Daily checkpoints:
   - If benchmark (SPY) price missing: mark checkpoint as skipped.
   - If SPY present but a pick missing: skip entire checkpoint for simplicity (v1).
