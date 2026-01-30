@@ -74,53 +74,22 @@ References: HLD `docs/001-high-level-design.md` (Workflows, Components), LLD `do
 ## 4) Picks + initial snapshot
 References: HLD `docs/001-high-level-design.md` (Weekly Pick Workflow), LLD `docs/006-integrations-openai.md`, `docs/007-integrations-alpha-vantage.md`, `docs/004-worker-service.md`
 
-### Open decisions (resolve before implementation)
-- [ ] **LLM output enforcement approach**
-  - Options:
-    - Structured output/JSON schema enforcement (if SDK supports).
-      - Pros: highest parse reliability, fewer retries.
-      - Cons: tighter coupling to provider/SDK.
-    - JSON mode / function-call style with manual validation.
-      - Pros: widely supported, still structured.
-      - Cons: requires strict validation + retries.
-    - Prompt-only JSON with best-effort parsing.
-      - Pros: simplest integration.
-      - Cons: most brittle; highest retry/ops cost.
-  - Industry standard: use structured outputs (or JSON mode) with strict validation and retry.
-  - Recommendation: prefer structured output if available; otherwise JSON mode + validation with max 2 attempts (per LLD).
-- [ ] **Baseline storage: day-0 checkpoint vs baseline-only fields**
-  - Options:
-    - Store baseline only in `batches.benchmark_initial_price` and `picks.initial_price` (no checkpoint row).
-      - Pros: matches current schema and LLD; simpler queries; avoids synthetic checkpoint.
-      - Cons: baseline not queryable as a checkpoint time series point.
-    - Create a checkpoint row on `run_date` to represent baseline.
-      - Pros: unified time series, consistent API output shape.
-      - Cons: adds semantics not in LLD; must define day-0 metrics (likely zero).
-  - Industry standard: store baseline separately and start time series on day 1.
-  - Recommendation: keep baseline only in batches/picks; start checkpoints on day 1..14.
-
 ### Tests first
 - [ ] OpenAI parsing/validation tests: invalid JSON, wrong count, dup tickers, bad action -> retries then fail.
 - [ ] Price snapshot tests: SPY + picks previous-close map; fail when any previous close missing.
-- [ ] DB write tests: transaction inserts batch + picks (baseline in batch/picks); re-run fails fast by run_date.
+- [ ] DB write tests: transaction inserts batch + picks + initial checkpoint; re-run fails fast by run_date.
 
 ### Implementation
 - [ ] Add OpenAI client wrapper with strict JSON schema and retry-on-invalid output.
 - [ ] Implement pick validation (count=3, unique, BUY|SELL, ticker format; no S&P 500 allowlist).
 - [ ] Implement Alpha Vantage snapshot client (SPY first, then picks) using previous close only.
-- [ ] Add workflow steps: generate picks -> snapshot prices -> persist batch + picks.
-- [ ] Persist batch + picks in one transaction; fail fast on run_date conflicts.
+- [ ] Add workflow steps: generate picks -> snapshot prices -> persist batch/picks/initial checkpoint.
+- [ ] Persist batch+pick+initial checkpoint in one transaction; fail fast on run_date conflicts.
 - [ ] Log pick list and created IDs.
 
-**Goal:** Weekly workflow creates the run_date batch with 3 validated picks and baseline prices from previous close. If the run_date already exists, the workflow fails fast.
+**Goal:** Weekly workflow creates the run_date batch with 3 validated picks and an initial checkpoint containing SPY + pick previous-close prices. If the run_date already exists, the workflow fails fast.
 
 **Working feature:** Weekly run creates a batch with picks and initial prices stored.
-
-**Success criteria:**
-- A weekly run inserts exactly 1 batch and 3 picks with baseline prices populated from previous close (SPY + picks).
-- Invalid LLM output is retried and then fails the step after 2 attempts with a clear error.
-- Re-running for the same run_date fails fast (no partial inserts).
-- Logs include pick tickers/actions and created IDs.
 
 ## 5) Daily checkpoints and metrics
 References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computation), LLD `docs/005-workflows-hatchet.md`, `docs/008-computation-metrics.md`, `docs/007-integrations-alpha-vantage.md`
