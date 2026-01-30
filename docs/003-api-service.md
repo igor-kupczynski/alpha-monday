@@ -34,7 +34,7 @@ Response includes:
 - batch id, run_date, status
 - benchmark symbol + initial price
 - picks (ticker, action, reasoning, initial_price)
-- latest checkpoint (if exists) with metrics
+- latest checkpoint (if exists) with metrics (`latest_checkpoint`)
 - Empty state: 200 with `"batch": null` when no batches exist.
 
 ### GET /batches
@@ -61,6 +61,10 @@ Optional debug endpoint. Returns events by batch_id. (Deferred in v1.)
 - checkpoints:
   - id, checkpoint_date, status, benchmark_price, benchmark_return_pct
   - metrics: list of pick metrics
+- top-level responses:
+  - `/latest`: `{ "batch": <batch|null>, "picks": [...], "latest_checkpoint": <checkpoint|null> }`
+  - `/batches`: `{ "batches": [...], "next_cursor": <run_date|null> }`
+  - `/batches/{id}`: `{ "batch": <batch>, "picks": [...], "checkpoints": [...] }`
 
 ## Serialization
 - Numeric values (prices and percentages) are serialized as strings to preserve precision.
@@ -89,7 +93,7 @@ Optional debug endpoint. Returns events by batch_id. (Deferred in v1.)
 ## Security
 - Validate path params as uuid.
 - Basic request logging.
-- CORS disabled by default; allowlist via `CORS_ALLOW_ORIGINS` if needed.
+- CORS disabled by default; allowlist via `CORS_ALLOW_ORIGINS` (comma-separated origins) if needed.
 
 ## Testing
 - Unit tests for query functions.

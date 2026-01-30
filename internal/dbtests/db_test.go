@@ -19,7 +19,10 @@ import (
 var (
 	testDB      *sql.DB
 	databaseURL string
+	lockConn    *sql.Conn
 )
+
+const advisoryLockID int64 = 424242
 
 func TestMain(m *testing.M) {
 	databaseURL = getenvDefault("DATABASE_URL", "postgres://alpha:alpha@localhost:5432/alpha_monday?sslmode=disable")
@@ -37,6 +40,14 @@ func TestMain(m *testing.M) {
 		failFast("ping db", err)
 	}
 
+	lockConn, err = testDB.Conn(ctx)
+	if err != nil {
+		failFast("lock connection", err)
+	}
+	if _, err := lockConn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", advisoryLockID); err != nil {
+		failFast("advisory lock", err)
+	}
+
 	if err := resetSchema(testDB); err != nil {
 		failFast("reset schema", err)
 	}
@@ -45,6 +56,10 @@ func TestMain(m *testing.M) {
 	}
 
 	code := m.Run()
+	if _, err := lockConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", advisoryLockID); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to release advisory lock: %v\n", err)
+	}
+	_ = lockConn.Close()
 	_ = testDB.Close()
 	os.Exit(code)
 }
