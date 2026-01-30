@@ -54,6 +54,7 @@ This document is the high-level design. Component-specific low-level design docs
   - Hatchet worker running workflows and steps.
   - Calls OpenAI and Alpha Vantage.
   - Writes batches, picks, checkpoints, and metrics.
+  - Implementation: Go + Hatchet SDK.
 - Database (Neon Postgres)
   - Source of truth for domain tables.
 - Hatchet Cloud

@@ -6,9 +6,11 @@ Date: 2026-01-30
 Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the only component that writes to Postgres.
 
 ## Service Structure
-- Language/runtime: TBD.
+- Language/runtime: Go (Hatchet SDK), aligned with API service.
+- Entry point: `cmd/worker`.
 - Modules:
-  - workflows: Hatchet workflow definitions
+  - worker: Hatchet client, worker bootstrap, workflow registration
+  - workflows: Hatchet workflow definitions + state types
   - steps: pick generation, price fetch, compute metrics
   - integrations: OpenAI, Alpha Vantage
   - db: inserts/updates
@@ -43,4 +45,5 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 
 ## Testing
 - Unit tests for computation.
+- Wiring tests for workflow registration and step naming.
 - Integration tests with mocked OpenAI/Alpha Vantage.

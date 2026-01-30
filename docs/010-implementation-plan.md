@@ -44,8 +44,17 @@ References: HLD `docs/001-high-level-design.md` (API, Components), LLD `docs/003
 ## 3) Worker baseline and workflow wiring
 References: HLD `docs/001-high-level-design.md` (Workflows, Components), LLD `docs/004-worker-service.md`, `docs/005-workflows-hatchet.md`
 
-- [ ] Set up worker runtime and Hatchet registration.
-- [ ] Implement workflow skeleton and state model.
+### Tests first
+- [ ] Add worker config tests for required env vars and defaults.
+- [ ] Add workflow registration wiring test to assert IDs (`weekly_pick_v1`, `daily_checkpoint_v1`).
+
+### Worker baseline
+- [ ] Create `cmd/worker` entrypoint with graceful shutdown.
+- [ ] Add worker bootstrap (config, logger, Hatchet client).
+- [ ] Register workflows and steps with Hatchet at startup.
+- [ ] Define workflow state struct and no-op step handlers.
+
+**Goal:** Running the worker registers the weekly workflow in Hatchet and logs registration; steps are stubbed but wired.
 
 **Working feature:** Worker starts and registers the weekly workflow with Hatchet.
 

@@ -8,6 +8,8 @@ Defines Hatchet workflows and their state, steps, retries, and rate limiting.
 ## Workflow: Weekly Pick (cron)
 Trigger:
 - Cron: Every Monday at 9am ET.
+Workflow ID:
+- `weekly_pick_v1`
 
 Workflow State:
 - batch_id
@@ -32,6 +34,8 @@ Steps:
 ## Step: Daily Checkpoint
 Inputs:
 - batch_id, list of picks, benchmark_symbol, benchmark_initial_price
+Step ID:
+- `daily_checkpoint_v1`
 
 Steps:
 1. fetch_prices_fanout
