@@ -31,6 +31,7 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 - Use upsert on checkpoints by (batch_id, checkpoint_date) if retries happen.
 - Guard weekly reruns via run_date unique constraint; on conflict, fail fast.
 - Initial checkpoint stores benchmark_price and leaves benchmark_return_pct null to represent the baseline snapshot.
+- Initial checkpoint_date reflects the trading day of the previous close (can be before run_date).
 
 ## Idempotency
 - Ensure steps can be retried safely:
@@ -44,6 +45,7 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 - Emit events for failures when events table is enabled.
 
 ## Logging
+- Structured JSON logs (slog JSON handler).
 - Log workflow start/end, step start/end, and errors.
 - Log key IDs: batch_id, checkpoint_id.
 

@@ -61,6 +61,9 @@ Indexes:
 - index on batch_id
 - unique(batch_id, checkpoint_date)
 
+Notes:
+- checkpoint_date reflects the trading day of the previous close and may predate run_date for the first checkpoint.
+
 ### pick_checkpoint_metrics
 Purpose: Metrics for each pick per checkpoint.
 

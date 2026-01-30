@@ -24,7 +24,7 @@ This document is the high-level design. Component-specific low-level design docs
 - Weekly pick batch created by Hatchet cron.
 - LLM generates 3 tickers (S&P 500) + BUY/SELL + reasoning.
 - Persist batches, picks, checkpoints, and metrics in Postgres.
-- Daily checkpoint for 14 calendar days; if market closed, record a skip event.
+- Daily checkpoint for 14 calendar days using previous trading day close; if previous close missing, record a skip event. Checkpoint dates reflect the trading day of the close (may predate the batch run_date on day 1).
 - API exposes latest batch and historical batches.
 - Logs only (stdout) for workflow state.
 
@@ -68,8 +68,8 @@ Steps:
 2. Snapshot initial prices for 3 picks + SPY using previous close only (no intraday).
 3. Persist batch creation and initial snapshot data.
 4. For day in 1..14:
-   - Durable sleep until next day at a fixed time (e.g., 9am ET).
-   - Run Daily Checkpoint step (fan-out price fetch).
+   - Durable sleep until next day at 9am ET.
+   - Run Daily Checkpoint step (fan-out previous-close fetch; checkpoint_date is previous trading day).
 
 Hatchet patterns:
 - Cron: weekly kickoff.
@@ -81,8 +81,8 @@ Hatchet patterns:
 
 ### 2) Daily Checkpoint Step (within workflow)
 Steps:
-1. Fetch prices for each ticker and SPY (fan-out).
-2. If price is unavailable due to market closed, emit checkpoint_skipped event.
+1. Fetch previous trading day close for each ticker and SPY (fan-out).
+2. If previous close is unavailable, emit checkpoint_skipped event.
 3. Compute return metrics and emit checkpoint_computed event.
 
 ## Data Model (Domain-first)
@@ -139,12 +139,12 @@ absolute_return_pct = ((current_price - initial_price) / initial_price) * 100
 vs_benchmark_pct = absolute_return_pct - benchmark_return_pct
 
 ## Rate Limiting and Backoff
-- Use Hatchet rate limiting for Alpha Vantage calls (5 req/min, 500/day).
+- Use Hatchet rate limiting for Alpha Vantage calls (5 req/min, 500/day); no client-side guard in v1.
 - Limit concurrency in fan-out steps (e.g., 2-3 at a time).
-- Retries with exponential backoff and jitter for transient failures.
+- Retries with exponential backoff and jitter for transient failures (3 attempts).
 
 ## Observability
-- All workflow state visible in stdout logs.
+- All workflow state visible in stdout logs (structured JSON with workflow/step IDs).
 - Errors logged in stdout.
 
 ## Developer Experience
@@ -156,10 +156,12 @@ vs_benchmark_pct = absolute_return_pct - benchmark_return_pct
 - Go toolchain is pinned to 1.25.6 in `go.mod`.
 
 ## Deployment
-- Worker container on Scaleway Serverless Containers.
+- Worker and API containers on Scaleway Serverless Containers.
 - Hatchet Cloud for orchestration.
 - Neon Postgres for storage.
 - Environment variables for API keys.
+- CI builds and tags images; deployments are manual approvals.
+- Migrations run as a separate approved job.
 
 ## Future Ideas
 - Add a simple dashboard UI.

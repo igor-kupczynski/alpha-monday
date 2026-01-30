@@ -26,10 +26,11 @@ Steps:
    - Fetch price for 3 picks and SPY.
    - Store benchmark_initial_price and pick initial_price.
 3. persist_batch
-   - Create batch + picks in a transaction.
+   - Create batch + picks + initial checkpoint in a transaction.
+   - Initial checkpoint_date is the trading day of the previous close.
 4. daily_loop (for day in 1..14)
    - durable_sleep until next day at 9am ET.
-   - run daily_checkpoint.
+   - run daily_checkpoint using previous trading day close (checkpoint_date is that trading day and may be before run_date on day 1).
 
 ## Step: Daily Checkpoint
 Inputs:
@@ -39,18 +40,18 @@ Step ID:
 
 Steps:
 1. fetch_prices_fanout
-   - Fetch current prices for each ticker and SPY.
+   - Fetch previous trading day close for each ticker and SPY.
    - Concurrency limit: 2-3.
    - Rate limit: 5 req/min via Hatchet.
 2. handle_market_closed
-   - If SPY or all picks unavailable, insert checkpoint with status=skipped.
+   - If SPY or any pick previous close unavailable, insert checkpoint with status=skipped.
 3. compute_metrics
    - Compute benchmark_return_pct and pick metrics.
 4. persist_checkpoint
    - Insert checkpoint and pick_checkpoint_metrics.
 
 ## Retries
-- Transient API failures: retry with exponential backoff + jitter.
+- Transient API failures: retry 3 attempts with exponential backoff + jitter.
 - Non-retry errors: mark batch failed and emit event.
 
 ## Rate Limiting

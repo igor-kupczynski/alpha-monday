@@ -6,10 +6,10 @@ Date: 2026-01-30
 Fetches stock prices for picks and SPY from Alpha Vantage.
 
 ## Endpoints
-- Global Quote for current price.
+- Global Quote for previous close (use the previous close field).
 
 ## Request Strategy
-- Fetch SPY first to detect market closed.
+- Fetch SPY first to detect market closed (previous close missing).
 - Fan-out for pick tickers.
 
 ## Rate Limits
@@ -25,8 +25,10 @@ Fetches stock prices for picks and SPY from Alpha Vantage.
   - Always use previous close for baseline prices (no intraday data).
   - If any previous close price is missing, fail the step to allow retry (no partial baseline).
 - Daily checkpoints:
-  - If benchmark (SPY) price missing: mark checkpoint as skipped.
-  - If SPY present but a pick missing: skip entire checkpoint for simplicity (v1).
+  - Always use previous trading day close (no intraday data).
+  - If benchmark (SPY) previous close missing: mark checkpoint as skipped.
+  - If SPY present but a pick previous close missing: skip entire checkpoint for simplicity (v1).
+  - checkpoint_date is the trading date of the previous close (can be before run_date for day 1).
 
 ## Error Handling
 - Retry transient HTTP failures.

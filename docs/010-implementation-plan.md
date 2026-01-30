@@ -94,92 +94,41 @@ References: HLD `docs/001-high-level-design.md` (Weekly Pick Workflow), LLD `doc
 ## 5) Daily checkpoints and metrics
 References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computation), LLD `docs/005-workflows-hatchet.md`, `docs/008-computation-metrics.md`, `docs/007-integrations-alpha-vantage.md`
 
-### Open decisions (resolve before implementation)
-- [ ] **Daily checkpoint time**
-  - Options:
-    - 9am ET (align with weekly run; simple).
-      - Pros: matches HLD example; simple scheduling.
-      - Cons: often before market open; may reflect previous close.
-    - Market close (end-of-day).
-      - Pros: matches end-of-day analytics; clearer daily performance.
-      - Cons: more timezone/holiday handling; longer waits.
-    - Fixed UTC time (e.g., 14:00 UTC).
-      - Pros: deterministic across timezones.
-      - Cons: less intuitive for US market context.
-  - Industry standard: end-of-day close for daily performance metrics.
-  - Recommendation: use 9am ET for v1 simplicity and to align with HLD; document that daily snapshots may reflect previous close.
-  - Decision: TBD.
-- [ ] **Missing-price handling for checkpoints**
-  - Options:
-    - Skip entire checkpoint if SPY missing or any pick missing.
-      - Pros: simplest; matches LLD.
-      - Cons: loses partial data.
-    - Allow partial checkpoints (per-pick nulls).
-      - Pros: retains partial data.
-      - Cons: complicates schema/API and metrics.
-    - Carry-forward last close for missing tickers.
-      - Pros: continuous series.
-      - Cons: hides data gaps; adds rules.
-  - Industry standard: skip or carry-forward depending on analytics needs; for minimal systems, skip.
-  - Recommendation: skip entire checkpoint when SPY missing or any pick missing (per LLD).
-  - Decision: TBD.
+### Decisions (resolved)
+- [x] **Daily checkpoint time**
+  - Decision: Run daily at 9am ET, but always use previous trading day close for prices; checkpoint_date is the previous trading day (can be before run_date for the first checkpoint).
+- [x] **Missing-price handling for checkpoints**
+  - Decision: If previous close is missing for SPY or any pick, skip the entire checkpoint.
 
 ### Tests first
-- [ ] Checkpoint loop tests: 14 calendar days, durable sleep scheduling, and batch completion.
-- [ ] Market-closed tests: SPY missing -> checkpoint skipped; pick missing -> checkpoint skipped.
+- [ ] Checkpoint loop tests: 14 calendar days, durable sleep scheduling, checkpoint_date uses previous trading day (can be before run_date), and batch completion.
+- [ ] Market-closed tests: SPY previous close missing -> checkpoint skipped; pick previous close missing -> checkpoint skipped.
 - [ ] Metrics tests: absolute_return_pct and vs_benchmark_pct formulas; reject non-finite values.
 
 ### Implementation
-- [ ] Implement durable sleep + daily loop for 14 calendar days (day 1..14).
-- [ ] Fetch daily prices with fan-out + concurrency cap; detect market-closed cases.
+- [ ] Implement durable sleep + daily loop for 14 calendar days (day 1..14), scheduled at 9am ET.
+- [ ] Fetch previous trading day close prices with fan-out + concurrency cap; set checkpoint_date to the trading date of the previous close.
 - [ ] Compute metrics per LLD and persist checkpoints + pick_checkpoint_metrics.
 - [ ] Mark batch status completed after day 14 checkpoint (computed or skipped).
 
 **Working feature:** Checkpoints are created daily with metrics or skipped status.
 
 **Success criteria:**
-- For each of 14 calendar days, exactly one checkpoint is written with status computed or skipped.
+- For each of 14 calendar days, exactly one checkpoint is written with status computed or skipped, and checkpoint_date reflects the previous trading day (may be before run_date on day 1).
 - Metrics match formulas in `docs/008-computation-metrics.md` and are stored without rounding.
-- Missing SPY or any pick results in a skipped checkpoint (no partial metrics).
+- Missing SPY or any pick previous close results in a skipped checkpoint (no partial metrics).
 - Batch status becomes `completed` after day 14 checkpoint.
 
 ## 6) Reliability and limits
 References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Observability), LLD `docs/005-workflows-hatchet.md`, `docs/004-worker-service.md`
 
-### Open decisions (resolve before implementation)
-- [ ] **Retry policy parameters**
-  - Options:
-    - 3 attempts with exponential backoff + jitter (short total delay).
-      - Pros: quick recovery; minimal runtime.
-      - Cons: fewer chances for flaky APIs.
-    - 5 attempts with capped exponential backoff + jitter.
-      - Pros: higher resilience.
-      - Cons: longer workflow duration.
-  - Industry standard: exponential backoff with jitter and a cap.
-  - Recommendation: 3-5 attempts, cap at ~60s per retry to stay within workflow SLAs.
-  - Decision: TBD.
-- [ ] **Rate limit enforcement location**
-  - Options:
-    - Hatchet rate limiter only.
-      - Pros: centralized control.
-      - Cons: relies on orchestrator correctness.
-    - Hatchet + client-side guard (token bucket).
-      - Pros: extra safety and local control.
-      - Cons: more code complexity.
-  - Industry standard: orchestrator + client guard for external APIs.
-  - Recommendation: Hatchet limiter + concurrency caps; add a lightweight client guard only if needed.
-  - Decision: TBD.
-- [ ] **Log format**
-  - Options:
-    - Structured JSON logs.
-      - Pros: easier aggregation/search; industry standard.
-      - Cons: slightly more setup.
-    - Plain text logs.
-      - Pros: simplest.
-      - Cons: harder to query.
-  - Industry standard: structured logs with workflow/step IDs.
-  - Recommendation: structured logs if logger already supports it; otherwise key=value text.
-  - Decision: TBD.
+### Decisions (resolved)
+- [x] **Retry policy parameters**
+  - Decision: 3 attempts with exponential backoff + jitter.
+- [x] **Rate limit enforcement location**
+  - Decision: Hatchet rate limiter only (no client-side guard in v1).
+- [x] **Log format**
+  - Decision: Structured JSON logs (use existing slog JSON handler).
 
 ### Implementation
 - [ ] Configure Hatchet rate limiting (5 req/min) and fan-out concurrency (2-3).
@@ -196,43 +145,13 @@ References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Obse
 ## 7) Deployment slice
 References: HLD `docs/001-high-level-design.md` (Deployment), LLD `docs/009-deployment-ops.md`
 
-### Open decisions (resolve before implementation)
-- [ ] **API hosting target**
-  - Options:
-    - Scaleway Serverless Containers (same as worker).
-      - Pros: fewer providers; shared tooling.
-      - Cons: may require more setup for public HTTP.
-    - Managed HTTP platform (Fly.io/Render/Railway).
-      - Pros: fast HTTP deploys; simple routing.
-      - Cons: adds another provider.
-  - Industry standard: deploy API + worker on the same managed container platform when possible.
-  - Recommendation: use Scaleway for API if HTTP ingress is straightforward; otherwise choose a managed HTTP platform with minimal ops.
-  - Decision: TBD.
-- [ ] **Deployment pipeline**
-  - Options:
-    - Manual build + push + deploy.
-      - Pros: fastest to start.
-      - Cons: manual errors; no audit trail.
-    - CI build/push with tagged images and manual deploy.
-      - Pros: repeatable artifacts; minimal automation.
-      - Cons: some CI setup.
-    - CI build + auto-deploy on main.
-      - Pros: fully automated.
-      - Cons: riskier for early-stage changes.
-  - Industry standard: CI builds with immutable tags; deploy via manual approval.
-  - Recommendation: CI build/push with manual deploy for v1.
-  - Decision: TBD.
-- [ ] **Migration execution**
-  - Options:
-    - One-off migration job (manual or CI) before deploy.
-      - Pros: explicit control; standard practice.
-      - Cons: extra step.
-    - Run migrations on API startup.
-      - Pros: simple.
-      - Cons: risky in production; harder to roll back.
-  - Industry standard: run migrations as a separate job with explicit approval.
-  - Recommendation: one-off migration job before deploy.
-  - Decision: TBD.
+### Decisions (resolved)
+- [x] **API hosting target**
+  - Decision: Scaleway Serverless Containers for API and worker.
+- [x] **Deployment pipeline**
+  - Decision: CI build/push with tagged images and manual deploy.
+- [x] **Migration execution**
+  - Decision: Run migrations as a separate job with explicit approval.
 
 ### Implementation
 - [ ] Containerize API and worker.
