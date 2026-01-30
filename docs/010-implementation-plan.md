@@ -8,28 +8,36 @@ Each major section ends in a working feature. References point to the HLD and re
 ## 1) Data layer ready
 References: HLD `docs/001-high-level-design.md` (Data Model), LLD `docs/002-database-schema.md`
 
-- [ ] Add local Postgres harness via docker compose with simple `db-up`, `db-down`, `db-reset`.
-- [ ] Adopt `golang-migrate` and define migration layout (`migrations/` with up/down).
-- [ ] Implement migrations for domain tables and indexes (batches, picks, checkpoints, pick_checkpoint_metrics).
-- [ ] Ensure UUIDs are app-generated (no DB extension, no default UUIDs in schema).
-- [ ] Skip `events` table for v1.
-- [ ] Validate minimal read queries needed by the API.
+- [x] Add local Postgres harness via docker compose with simple `db-up`, `db-down`, `db-reset`.
+- [x] Adopt `golang-migrate` and define migration layout (`migrations/` with up/down).
+- [x] Implement migrations for domain tables and indexes (batches, picks, checkpoints, pick_checkpoint_metrics).
+- [x] Ensure UUIDs are app-generated (no DB extension, no default UUIDs in schema).
+- [x] Skip `events` table for v1.
+- [x] Validate minimal read queries needed by the API.
 
 ### Local schema + DB tests
-- [ ] Migration test: run all migrations on a clean DB and fail on any error.
-- [ ] Schema assertions: verify tables, columns, FKs, uniques, and CHECK constraints via SQL (or pgTAP).
-- [ ] Integrity tests: insert valid fixtures and assert invalid inserts fail (bad enum, missing FK, duplicate run_date).
-- [ ] Query tests: seed minimal data and validate latest batch + batch detail queries.
-- [ ] Index sanity: confirm required indexes exist; use `EXPLAIN` on key reads to ensure index usage.
+- [x] Migration test: run all migrations on a clean DB and fail on any error.
+- [x] Schema assertions: verify tables, columns, FKs, uniques, and CHECK constraints via SQL (or pgTAP).
+- [x] Integrity tests: insert valid fixtures and assert invalid inserts fail (bad enum, missing FK, duplicate run_date).
+- [x] Query tests: seed minimal data and validate latest batch + batch detail queries.
+- [x] Index sanity: confirm required indexes exist; use `EXPLAIN` on key reads to ensure index usage.
 
 **Success criteria:** Fresh local DB can be created, migrated, and validated via the test suite; schema includes only domain tables; UUIDs are supplied by the app; latest batch and batch detail queries return expected results.
 
 ## 2) Read-only API online
 References: HLD `docs/001-high-level-design.md` (API, Components), LLD `docs/003-api-service.md`
 
-- [ ] Build API service skeleton and DB read layer.
-- [ ] Implement `/health`, `/latest`, `/batches`, `/batches/{id}`.
-- [ ] Add basic request validation and error handling.
+### Tests first
+- [ ] Create API query tests for latest batch, batch list pagination, and batch details.
+- [ ] Add handler tests for `/health`, `/latest`, `/batches`, `/batches/{id}` (empty state, invalid params, not found).
+
+### API implementation
+- [ ] Initialize Go module structure (`cmd/api`, `internal/api`, `internal/db`).
+- [ ] Add config loading for `DATABASE_URL`, `PORT`, `LOG_LEVEL`, `CORS_ALLOW_ORIGINS`.
+- [ ] Set up HTTP server with chi router, middlewares, and timeouts.
+- [ ] Implement DB pool (pgxpool) and query layer for latest, list, and detail reads.
+- [ ] Implement `/health`, `/latest`, `/batches`, `/batches/{id}` handlers.
+- [ ] Add response/error helpers and JSON serialization for numeric strings.
 
 **Working feature:** API serves batch data (even if empty) from Postgres.
 
