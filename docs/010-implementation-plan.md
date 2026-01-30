@@ -5,6 +5,18 @@ Date: 2026-01-30
 
 Each major section ends in a working feature. References point to the HLD and relevant LLDs.
 
+## 0) Developer Experience
+References: HLD `docs/001-high-level-design.md` (Developer Experience), LLD `docs/011-devex-tooling.md`
+
+- [x] Add top-level Makefile with dynamic `help` output.
+- [x] Add Makefile targets for `db-up`, `db-down`, `db-reset`, `test`, and `fmt`.
+- [x] Add `fmt-check` and `lint` targets (go vet + staticcheck).
+
+## 0.1) CI baseline
+References: HLD `docs/001-high-level-design.md` (Developer Experience), LLD `docs/012-ci.md`
+
+- [x] Add GitHub Actions workflow to run `make lint` and `go test ./...` with a Postgres service container.
+
 ## 1) Data layer ready
 References: HLD `docs/001-high-level-design.md` (Data Model), LLD `docs/002-database-schema.md`
 
@@ -45,14 +57,14 @@ References: HLD `docs/001-high-level-design.md` (API, Components), LLD `docs/003
 References: HLD `docs/001-high-level-design.md` (Workflows, Components), LLD `docs/004-worker-service.md`, `docs/005-workflows-hatchet.md`
 
 ### Tests first
-- [ ] Add worker config tests for required env vars and defaults.
-- [ ] Add workflow registration wiring test to assert IDs (`weekly_pick_v1`, `daily_checkpoint_v1`).
+- [x] Add worker config tests for required env vars and defaults.
+- [x] Add workflow registration wiring test to assert IDs (`weekly_pick_v1`, `daily_checkpoint_v1`).
 
 ### Worker baseline
-- [ ] Create `cmd/worker` entrypoint with graceful shutdown.
-- [ ] Add worker bootstrap (config, logger, Hatchet client).
-- [ ] Register workflows and steps with Hatchet at startup.
-- [ ] Define workflow state struct and no-op step handlers.
+- [x] Create `cmd/worker` entrypoint with graceful shutdown.
+- [x] Add worker bootstrap (config, logger, Hatchet client).
+- [x] Register workflows and steps with Hatchet at startup.
+- [x] Define workflow state struct and no-op step handlers.
 
 **Goal:** Running the worker registers the weekly workflow in Hatchet and logs registration; steps are stubbed but wired.
 

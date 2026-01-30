@@ -7,7 +7,7 @@ Defines Hatchet workflows and their state, steps, retries, and rate limiting.
 
 ## Workflow: Weekly Pick (cron)
 Trigger:
-- Cron: Every Monday at 9am ET.
+- Cron: Every Monday at 9am ET (`0 9 * * 1` with timezone configured in Hatchet).
 Workflow ID:
 - `weekly_pick_v1`
 

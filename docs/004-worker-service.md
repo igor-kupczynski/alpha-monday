@@ -20,7 +20,9 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 - DATABASE_URL
 - OPENAI_API_KEY
 - ALPHA_VANTAGE_API_KEY
-- HATCHET_CLIENT_ID / HATCHET_CLIENT_SECRET (if needed)
+- HATCHET_CLIENT_TOKEN
+- HATCHET_CLIENT_HOST_PORT (required if not embedded in token)
+- HATCHET_WORKER_NAME (default: `alpha-monday-worker`)
 - LOG_LEVEL
 
 ## DB Write Patterns
