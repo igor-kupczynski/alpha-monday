@@ -49,6 +49,7 @@ This document is the high-level design. Component-specific low-level design docs
 - API Service
   - Read-only HTTP API.
   - Serves batch and checkpoint data from Postgres.
+  - Implementation: Go + chi + pgx (read-only).
 - Worker Service
   - Hatchet worker running workflows and steps.
   - Calls OpenAI and Alpha Vantage.
