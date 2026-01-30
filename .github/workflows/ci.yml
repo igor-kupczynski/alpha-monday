@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: alpha
+          POSTGRES_PASSWORD: alpha
+          POSTGRES_DB: alpha_monday
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U alpha -d alpha_monday"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://alpha:alpha@localhost:5432/alpha_monday?sslmode=disable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+      - name: Lint
+        run: make lint
+      - name: Run tests
+        run: go test ./...

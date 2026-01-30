@@ -11,6 +11,7 @@ References: HLD `docs/001-high-level-design.md` (Developer Experience), LLD `doc
 - [x] Add top-level Makefile with dynamic `help` output.
 - [x] Add Makefile targets for `db-up`, `db-down`, `db-reset`, `test`, and `fmt`.
 - [x] Add `fmt-check` and `lint` targets (go vet + staticcheck).
+- [x] Pin Go toolchain to 1.25.6 in `go.mod`.
 
 ## 0.1) CI baseline
 References: HLD `docs/001-high-level-design.md` (Developer Experience), LLD `docs/012-ci.md`

@@ -6,7 +6,7 @@ Date: 2026-01-30
 Alpha Monday is a minimal, fun project to learn Hatchet workflows. Every Monday at 9am ET, the system asks an LLM for 3 S&P 500 stock picks, snapshots prices, and then checks performance daily for 14 calendar days. The benchmark is SPY.
 
 ## Document Structure
-This document is the high-level design. Component-specific low-level design docs will follow for deeper detail (progressive disclosure).
+This document is the high-level design. Component-specific low-level design docs will follow for deeper detail (progressive disclosure), including dev tooling (LLD `docs/011-devex-tooling.md`) and CI (LLD `docs/012-ci.md`).
 
 ## Goals
 - Learn Hatchet features: cron, durable sleep, fan-out, rate limiting, retries, workflow state.
@@ -146,6 +146,14 @@ vs_benchmark_pct = absolute_return_pct - benchmark_return_pct
 ## Observability
 - All workflow state visible in stdout logs.
 - Errors logged in stdout.
+
+## Developer Experience
+- Makefile is the canonical entrypoint for local tasks.
+- `make help` provides a dynamic list of available targets.
+- DB scripts remain the source of truth; the Makefile wraps them.
+- Linting uses `go vet` and `staticcheck`, exposed via `make lint`.
+- GitHub Actions runs CI with a Postgres service, `make lint`, and `go test ./...`.
+- Go toolchain is pinned to 1.25.6 in `go.mod`.
 
 ## Deployment
 - Worker container on Scaleway Serverless Containers.
