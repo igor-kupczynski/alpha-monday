@@ -1,6 +1,5 @@
 # Alpha Monday - High Level Design
 
-Status: draft
 Date: 2026-01-30
 
 ## Context
