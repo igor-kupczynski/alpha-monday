@@ -571,7 +571,11 @@ func assertExplainUsesIndex(t *testing.T, query, indexName string, args ...any) 
 	if err != nil {
 		t.Fatalf("explain %s: %v", query, err)
 	}
-	if !strings.Contains(plan, "Index Scan using "+indexName) && !strings.Contains(plan, "Index Only Scan using "+indexName) {
+	if !strings.Contains(plan, "Index Scan using "+indexName) &&
+		!strings.Contains(plan, "Index Scan Backward using "+indexName) &&
+		!strings.Contains(plan, "Index Only Scan using "+indexName) &&
+		!strings.Contains(plan, "Index Only Scan Backward using "+indexName) &&
+		!strings.Contains(plan, "Bitmap Index Scan on "+indexName) {
 		t.Fatalf("expected plan to use index %s, got:\n%s", indexName, plan)
 	}
 }
