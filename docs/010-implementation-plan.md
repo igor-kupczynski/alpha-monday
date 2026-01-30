@@ -8,10 +8,21 @@ Each major section ends in a working feature. References point to the HLD and re
 ## 1) Data layer ready
 References: HLD `docs/001-high-level-design.md` (Data Model), LLD `docs/002-database-schema.md`
 
-- [ ] Implement migrations for domain tables and indexes.
+- [ ] Add local Postgres harness via docker compose with simple `db-up`, `db-down`, `db-reset`.
+- [ ] Adopt `golang-migrate` and define migration layout (`migrations/` with up/down).
+- [ ] Implement migrations for domain tables and indexes (batches, picks, checkpoints, pick_checkpoint_metrics).
+- [ ] Ensure UUIDs are app-generated (no DB extension, no default UUIDs in schema).
+- [ ] Skip `events` table for v1.
 - [ ] Validate minimal read queries needed by the API.
 
-**Working feature:** Database schema exists and supports reads for latest batch and batch detail.
+### Local schema + DB tests
+- [ ] Migration test: run all migrations on a clean DB and fail on any error.
+- [ ] Schema assertions: verify tables, columns, FKs, uniques, and CHECK constraints via SQL (or pgTAP).
+- [ ] Integrity tests: insert valid fixtures and assert invalid inserts fail (bad enum, missing FK, duplicate run_date).
+- [ ] Query tests: seed minimal data and validate latest batch + batch detail queries.
+- [ ] Index sanity: confirm required indexes exist; use `EXPLAIN` on key reads to ensure index usage.
+
+**Success criteria:** Fresh local DB can be created, migrated, and validated via the test suite; schema includes only domain tables; UUIDs are supplied by the app; latest batch and batch detail queries return expected results.
 
 ## 2) Read-only API online
 References: HLD `docs/001-high-level-design.md` (API, Components), LLD `docs/003-api-service.md`
@@ -51,7 +62,7 @@ References: HLD `docs/001-high-level-design.md` (Rate Limiting and Backoff, Obse
 
 - [ ] Configure Hatchet rate limiting and fan-out concurrency.
 - [ ] Add retries with exponential backoff for transient API failures.
-- [ ] Log workflow lifecycle and errors (stdout) and optional events.
+- [ ] Log workflow lifecycle and errors (stdout).
 
 **Working feature:** Workflow runs reliably without violating API limits and produces useful logs.
 

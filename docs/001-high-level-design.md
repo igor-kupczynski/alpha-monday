@@ -31,7 +31,7 @@ This document is the high-level design. Component-specific low-level design docs
 ## Architecture
 - Hatchet Cloud runs workflows and schedules.
 - Scaleway Serverless Containers run the worker.
-- Neon Postgres stores events (append-only).
+- Neon Postgres stores domain tables only in v1.
 - External APIs:
   - OpenAI: pick generation.
   - Alpha Vantage: price data for tickers and SPY.
@@ -55,7 +55,6 @@ This document is the high-level design. Component-specific low-level design docs
   - Writes batches, picks, checkpoints, and metrics.
 - Database (Neon Postgres)
   - Source of truth for domain tables.
-  - Optional events audit table.
 - Hatchet Cloud
   - Cron trigger and workflow orchestration.
 
@@ -65,7 +64,7 @@ Trigger: Every Monday 9am ET.
 Steps:
 1. Generate picks (LLM) with constraint: S&P 500.
 2. Snapshot initial prices for 3 picks + SPY.
-3. Persist events for batch creation and initial snapshot.
+3. Persist batch creation and initial snapshot data.
 4. For day in 1..14:
    - Durable sleep until next day at a fixed time (e.g., 9am ET).
    - Run Daily Checkpoint step (fan-out price fetch).
@@ -85,7 +84,7 @@ Steps:
 3. Compute return metrics and emit checkpoint_computed event.
 
 ## Data Model (Domain-first)
-Postgres (Neon) with tables optimized for the app’s queries. An optional events log can be kept for audit/debugging, but it is not the source of truth.
+Postgres (Neon) with tables optimized for the app’s queries. An events log is deferred in v1.
 
 Core tables:
 - batches
@@ -117,14 +116,6 @@ Core tables:
   - absolute_return_pct (numeric)
   - vs_benchmark_pct (numeric)
 
-Optional audit table:
-- events
-  - id (uuid, pk)
-  - created_at (timestamptz)
-  - batch_id (uuid, indexed)
-  - event_type (text)
-  - payload (jsonb)
-
 Rationale:
 - Domain tables match the API needs and keep reads simple.
 - Derived metrics are stored at checkpoint time to avoid recomputation.
@@ -135,7 +126,6 @@ Minimal, read-only endpoints:
 - GET /latest (latest batch summary)
 - GET /batches (list batches, newest first)
 - GET /batches/{id} (batch details with computed checkpoints)
-- GET /events?batch_id=... (optional for debugging/learning)
 
 Suggested response shape:
 - Latest/batch endpoints read from domain tables.
@@ -153,7 +143,7 @@ vs_benchmark_pct = absolute_return_pct - benchmark_return_pct
 
 ## Observability
 - All workflow state visible in stdout logs.
-- Errors logged and optionally recorded in the events audit table.
+- Errors logged in stdout.
 
 ## Deployment
 - Worker container on Scaleway Serverless Containers.

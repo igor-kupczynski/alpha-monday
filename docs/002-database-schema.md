@@ -3,13 +3,14 @@
 Date: 2026-01-30
 
 ## Overview
-Defines the concrete Postgres schema for batches, picks, checkpoints, and metrics. The schema is optimized for simple reads for the API and append-only writes by the worker.
+Defines the concrete Postgres schema for batches, picks, checkpoints, and metrics. The schema is optimized for simple reads for the API and append-only writes by the worker. The optional events table is deferred in v1.
 
 ## Design Principles
 - Domain tables are the source of truth.
 - Store derived metrics at checkpoint time to avoid recomputation.
 - Keep queries simple for API endpoints.
 - Use explicit enums via CHECK constraints for portability.
+- UUIDs are generated in the application, not the database.
 
 ## Tables
 
@@ -76,23 +77,10 @@ Indexes:
 - index on pick_id
 - unique(checkpoint_id, pick_id)
 
-### events (optional)
-Purpose: Append-only audit/debug log; not a source of truth.
-
-Columns:
-- id uuid pk
-- created_at timestamptz not null default now()
-- batch_id uuid null references batches(id)
-- event_type text not null
-- payload jsonb not null
-
-Indexes:
-- index on batch_id
-- index on event_type
-
 ## Migrations
-- Use one migration per table in order: batches, picks, checkpoints, pick_checkpoint_metrics, events.
+- Use one migration per table in order: batches, picks, checkpoints, pick_checkpoint_metrics.
 - Add indexes in the same migration as table creation.
+- Use `golang-migrate` to apply migrations locally and in CI.
 
 ## Query Patterns
 - Latest batch: select from batches order by run_date desc limit 1.
@@ -101,7 +89,7 @@ Indexes:
 
 ## Data Integrity
 - Ensure batch exists before inserting picks and checkpoints.
-- Only allow checkpoint inserts for batches with status active.
+- Only allow checkpoint inserts for batches with status active (enforced at the app layer).
 - Mark batch status completed after day 14 checkpoint computed or skipped.
 
 ## Numeric Precision
@@ -109,5 +97,4 @@ Indexes:
 - Application should round for display; store raw computed numeric values.
 
 ## TODOs
-- Decide on uuid generation strategy in DB vs app.
 - Consider partial index for active batches if needed.
