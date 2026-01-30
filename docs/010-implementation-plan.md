@@ -21,7 +21,7 @@ References: HLD `docs/001-high-level-design.md` (Developer Experience), LLD `doc
 ## 1) Data layer ready
 References: HLD `docs/001-high-level-design.md` (Data Model), LLD `docs/002-database-schema.md`
 
-- [x] Add local Postgres harness via docker compose with simple `db-up`, `db-down`, `db-reset`.
+- [x] Add local Postgres harness via docker compose with simple `db-up`, `db-down`, `db-reset` scripts (wrapped by Makefile targets).
 - [x] Adopt `golang-migrate` and define migration layout (`migrations/` with up/down).
 - [x] Implement migrations for domain tables and indexes (batches, picks, checkpoints, pick_checkpoint_metrics).
 - [x] Ensure UUIDs are app-generated (no DB extension, no default UUIDs in schema).

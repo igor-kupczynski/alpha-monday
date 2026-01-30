@@ -11,7 +11,7 @@
 - When we make any decisions do update the LLDs and HLDs to reflect those decisions. Don't ask "should we update the docs?" Just do it.
 
 ## Commands and workflows (minimal)
-- Local DB: `./scripts/db-up`, `./scripts/db-down`, `./scripts/db-reset`
+- Local DB: `make db-up`, `make db-down`, `make db-reset`
 - Tests: `make test` (brings up the local DB)
 - Lint: `make lint` (requires `staticcheck`).
 - Go: 1.25.6 (pinned via `go.mod` toolchain).
