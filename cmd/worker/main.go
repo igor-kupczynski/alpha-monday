@@ -51,6 +51,10 @@ func main() {
 		logger.Error("hatchet client init failed", "error", err)
 		os.Exit(1)
 	}
+	if err := appworker.ConfigureRateLimits(client, logger); err != nil {
+		logger.Error("hatchet rate limit configuration failed", "error", err)
+		os.Exit(1)
+	}
 
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
@@ -72,6 +76,7 @@ func main() {
 		logger.Error("hatchet worker init failed", "error", err)
 		os.Exit(1)
 	}
+	w.Use(appworker.WorkflowLogger(logger))
 
 	if err := appworker.RegisterWorkflows(w, logger, steps); err != nil {
 		logger.Error("workflow registration failed", "error", err)

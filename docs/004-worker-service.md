@@ -40,14 +40,19 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
   - Metrics use unique(checkpoint_id, pick_id).
 
 ## Error Handling
-- Retry transient API failures.
+- Retry transient API failures (3 attempts, exponential backoff + jitter, base 500ms, max 5s).
 - Mark batch failed if unrecoverable errors occur.
 - Emit events for failures when events table is enabled.
 
 ## Logging
 - Structured JSON logs (slog JSON handler).
-- Log workflow start/end, step start/end, and errors.
+- Hatchet middleware logs step start/end and failures with workflow_run_id, step_name, step_run_id, retry_count.
 - Log key IDs: batch_id, checkpoint_id.
+
+## Rate Limiting
+- Configure Hatchet rate limits on worker startup:
+  - alpha_vantage_minute: 5 req/min
+  - alpha_vantage_day: 500 req/day
 
 ## Testing
 - Unit tests for computation.

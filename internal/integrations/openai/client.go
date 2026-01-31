@@ -257,10 +257,7 @@ func isRetryableError(err error) bool {
 		return statusErr.status == http.StatusTooManyRequests || statusErr.status >= 500
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &netErr)
 }
 
 func parseAndValidate(content string) ([]Pick, error) {

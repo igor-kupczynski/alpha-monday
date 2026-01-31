@@ -3,7 +3,6 @@ package worker
 import (
 	"testing"
 
-	"github.com/hatchet-dev/hatchet/pkg/client/types"
 	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
 )
 
@@ -64,29 +63,31 @@ func TestWorkflowRateLimitsConfigured(t *testing.T) {
 		t.Fatalf("expected step %q to be present", DailyCheckpointStepID)
 	}
 
-	assertRateLimit(t, snapshotStep, alphaVantageRateLimitKey, alphaVantageRateLimitUnits, types.Minute)
-	assertRateLimit(t, dailyStep, alphaVantageRateLimitKey, alphaVantageRateLimitUnits, types.Minute)
+	assertRateLimit(t, snapshotStep, alphaVantageRateLimitMinuteKey, alphaVantageRateLimitUnits)
+	assertRateLimit(t, snapshotStep, alphaVantageRateLimitDayKey, alphaVantageRateLimitUnits)
+	assertRateLimit(t, dailyStep, alphaVantageRateLimitMinuteKey, alphaVantageRateLimitUnits)
+	assertRateLimit(t, dailyStep, alphaVantageRateLimitDayKey, alphaVantageRateLimitUnits)
 }
 
-func assertRateLimit(t *testing.T, step *hatchetworker.WorkflowStep, key string, units int, duration types.RateLimitDuration) {
+func assertRateLimit(t *testing.T, step *hatchetworker.WorkflowStep, key string, units int) {
 	t.Helper()
 	if len(step.RateLimit) == 0 {
 		t.Fatalf("expected rate limit on step %q", step.Name)
 	}
-	limit := step.RateLimit[0]
-	if limit.Key != key {
-		t.Fatalf("expected rate limit key %q, got %q", key, limit.Key)
+	var limit *hatchetworker.RateLimit
+	for i := range step.RateLimit {
+		if step.RateLimit[i].Key == key {
+			limit = &step.RateLimit[i]
+			break
+		}
+	}
+	if limit == nil {
+		t.Fatalf("expected rate limit key %q on step %q", key, step.Name)
 	}
 	if limit.Units == nil || *limit.Units != units {
 		if limit.Units == nil {
 			t.Fatalf("expected rate limit units %d, got nil", units)
 		}
 		t.Fatalf("expected rate limit units %d, got %d", units, *limit.Units)
-	}
-	if limit.Duration == nil || *limit.Duration != duration {
-		if limit.Duration == nil {
-			t.Fatalf("expected rate limit duration %v, got nil", duration)
-		}
-		t.Fatalf("expected rate limit duration %v, got %v", duration, *limit.Duration)
 	}
 }

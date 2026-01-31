@@ -29,7 +29,7 @@ Steps:
    - Create batch + picks + initial checkpoint in a transaction.
    - Initial checkpoint_date is the trading day of the previous close.
 4. daily_loop (for day in 1..14)
-   - sleep until next day at 9am ET (in-process sleeper; durable sleep not available in Go SDK yet).
+   - sleep until next day at 9am ET using Hatchet durable sleep (Go SDK DurableContext.SleepFor).
    - run daily_checkpoint using previous trading day close (checkpoint_date is that trading day and may be before run_date on day 1).
    - sleep uses absolute 9am ET targets; if a run resumes after the target time, it proceeds without sleeping.
 
@@ -53,12 +53,14 @@ Steps:
    - Insert checkpoint and pick_checkpoint_metrics.
 
 ## Retries
-- Transient API failures: retry 3 attempts with exponential backoff + jitter.
+- Transient API failures: retry 3 attempts with exponential backoff + jitter (base 500ms, max 5s).
 - Non-retry errors: mark batch failed and emit event.
 
 ## Rate Limiting
-- Configure Hatchet rate limiter for Alpha Vantage calls: 5 req/min.
-- Fan-out concurrency capped at 2-3.
+- Configure Hatchet rate limits for Alpha Vantage calls:
+  - alpha_vantage_minute: 5 req/min (units=4 per step run).
+  - alpha_vantage_day: 500 req/day (units=4 per step run).
+- Fan-out concurrency capped at 3.
 
 ## Idempotency
 - Checkpoint step safe for retries due to unique constraints.

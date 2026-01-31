@@ -3,19 +3,21 @@ package worker
 import (
 	"log/slog"
 
-	"github.com/hatchet-dev/hatchet/pkg/client/types"
 	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
 )
 
 const (
-	WeeklyPickWorkflowID   = "weekly_pick_v1"
-	DailyCheckpointStepID  = "daily_checkpoint_v1"
-	StepGeneratePicksID    = "generate_picks"
-	StepSnapshotPricesID   = "snapshot_initial_prices"
-	StepPersistBatchID     = "persist_batch"
-	weeklyPickCronSchedule = "0 9 * * 1"
-	alphaVantageRateLimitKey   = "alpha_vantage"
-	alphaVantageRateLimitUnits = 4
+	WeeklyPickWorkflowID           = "weekly_pick_v1"
+	DailyCheckpointStepID          = "daily_checkpoint_v1"
+	StepGeneratePicksID            = "generate_picks"
+	StepSnapshotPricesID           = "snapshot_initial_prices"
+	StepPersistBatchID             = "persist_batch"
+	weeklyPickCronSchedule         = "0 9 * * 1"
+	alphaVantageRateLimitMinuteKey = "alpha_vantage_minute"
+	alphaVantageRateLimitDayKey    = "alpha_vantage_day"
+	alphaVantageRateLimitUnits     = 4
+	alphaVantageRateLimitMaxMinute = 5
+	alphaVantageRateLimitMaxDay    = 500
 )
 
 // WeeklyPickState is the workflow state stored by Hatchet for the weekly workflow.
@@ -75,7 +77,9 @@ func buildWorkflow(spec workflowSpec, logger *slog.Logger, stepDeps *Steps) *hat
 		}
 		current := hatchetworker.Fn(handler).SetName(step.ID)
 		if step.ID == StepSnapshotPricesID || step.ID == DailyCheckpointStepID {
-			current.SetRateLimit(alphaVantageRateLimit())
+			for _, rateLimit := range alphaVantageRateLimits() {
+				current.SetRateLimit(rateLimit)
+			}
 		}
 		if previous != nil {
 			current.AddParents(previous.Name)
@@ -96,13 +100,17 @@ func buildWorkflow(spec workflowSpec, logger *slog.Logger, stepDeps *Steps) *hat
 	return job
 }
 
-func alphaVantageRateLimit() hatchetworker.RateLimit {
+func alphaVantageRateLimits() []hatchetworker.RateLimit {
 	units := alphaVantageRateLimitUnits
-	duration := types.Minute
-	return hatchetworker.RateLimit{
-		Key:      alphaVantageRateLimitKey,
-		Units:    &units,
-		Duration: &duration,
+	return []hatchetworker.RateLimit{
+		{
+			Key:   alphaVantageRateLimitMinuteKey,
+			Units: &units,
+		},
+		{
+			Key:   alphaVantageRateLimitDayKey,
+			Units: &units,
+		},
 	}
 }
 

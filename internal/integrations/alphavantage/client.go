@@ -16,9 +16,9 @@ import (
 const defaultBaseURL = "https://www.alphavantage.co/query"
 
 type Client struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
+	apiKey      string
+	baseURL     string
+	httpClient  *http.Client
 	retryConfig retry.Config
 }
 
@@ -54,9 +54,9 @@ func WithRetryConfig(config retry.Config) Option {
 
 func NewClient(apiKey string, opts ...Option) *Client {
 	client := &Client{
-		apiKey:     strings.TrimSpace(apiKey),
-		baseURL:    defaultBaseURL,
-		httpClient: http.DefaultClient,
+		apiKey:      strings.TrimSpace(apiKey),
+		baseURL:     defaultBaseURL,
+		httpClient:  http.DefaultClient,
 		retryConfig: retry.DefaultConfig(),
 	}
 
@@ -197,10 +197,7 @@ func isRetryableError(err error) bool {
 		return statusErr.status == http.StatusTooManyRequests || statusErr.status >= 500
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &netErr)
 }
 
 func requireQuote(quote Quote) error {
