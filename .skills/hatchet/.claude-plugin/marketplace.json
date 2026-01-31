@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "hatchet-skill",
+  "description": "Hatchet workflow skill for Claude Code",
+  "owner": {
+    "name": "Igor Kupczynski"
+  },
+  "plugins": [
+    {
+      "name": "hatchet",
+      "description": "Build and debug Hatchet workflows",
+      "version": "1.0.0",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}
