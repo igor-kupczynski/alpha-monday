@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
 	"github.com/igor-kupczynski/alpha-monday/internal/db"
 	"github.com/igor-kupczynski/alpha-monday/internal/integrations/alphavantage"
 )
@@ -24,12 +25,22 @@ type fakeSleeper struct {
 	calls []time.Time
 }
 
-func (f *fakeSleeper) SleepUntil(ctx context.Context, target time.Time) error {
+func (f *fakeSleeper) SleepUntil(ctx sleepContext, target time.Time) error {
 	f.calls = append(f.calls, target)
 	if target.After(f.clock.now) {
 		f.clock.now = target
 	}
 	return nil
+}
+
+type fakeDurableContext struct {
+	context.Context
+	sleepForCalls []time.Duration
+}
+
+func (f *fakeDurableContext) SleepFor(duration time.Duration) (*hatchetworker.SingleWaitResult, error) {
+	f.sleepForCalls = append(f.sleepForCalls, duration)
+	return nil, nil
 }
 
 type fakeStore struct {
@@ -153,7 +164,8 @@ func TestDailyCheckpointLoopSchedulesAndCompletes(t *testing.T) {
 		},
 	}
 
-	if err := steps.runDailyCheckpoints(context.Background(), state); err != nil {
+	ctx := &fakeDurableContext{Context: context.Background()}
+	if err := steps.runDailyCheckpoints(ctx, state); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -183,6 +195,32 @@ func TestDailyCheckpointLoopSchedulesAndCompletes(t *testing.T) {
 
 	if len(store.statusUpdates) != 1 || store.statusUpdates[0] != "completed" {
 		t.Fatalf("expected completed status update, got %v", store.statusUpdates)
+	}
+}
+
+func TestRealSleeperUsesDurableSleep(t *testing.T) {
+	now := time.Date(2026, 1, 5, 8, 0, 0, 0, time.UTC)
+	clock := &fakeClock{now: now}
+	sleeper := realSleeper{clock: clock}
+	ctx := &fakeDurableContext{Context: context.Background()}
+
+	target := now.Add(2 * time.Hour)
+	if err := sleeper.SleepUntil(ctx, target); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ctx.sleepForCalls) != 1 {
+		t.Fatalf("expected 1 SleepFor call, got %d", len(ctx.sleepForCalls))
+	}
+	if ctx.sleepForCalls[0] != 2*time.Hour {
+		t.Fatalf("expected SleepFor duration %s, got %s", 2*time.Hour, ctx.sleepForCalls[0])
+	}
+
+	past := now.Add(-5 * time.Minute)
+	if err := sleeper.SleepUntil(ctx, past); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ctx.sleepForCalls) != 1 {
+		t.Fatalf("expected no additional SleepFor calls, got %d", len(ctx.sleepForCalls))
 	}
 }
 

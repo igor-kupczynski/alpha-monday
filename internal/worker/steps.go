@@ -40,15 +40,20 @@ func (realClock) Now() time.Time {
 	return time.Now()
 }
 
+type sleepContext interface {
+	context.Context
+	SleepFor(duration time.Duration) (*hatchetworker.SingleWaitResult, error)
+}
+
 type Sleeper interface {
-	SleepUntil(ctx context.Context, target time.Time) error
+	SleepUntil(ctx sleepContext, target time.Time) error
 }
 
 type realSleeper struct {
 	clock Clock
 }
 
-func (s realSleeper) SleepUntil(ctx context.Context, target time.Time) error {
+func (s realSleeper) SleepUntil(ctx sleepContext, target time.Time) error {
 	if s.clock == nil {
 		s.clock = realClock{}
 	}
@@ -56,15 +61,14 @@ func (s realSleeper) SleepUntil(ctx context.Context, target time.Time) error {
 	if !target.After(now) {
 		return nil
 	}
-	timer := time.NewTimer(target.Sub(now))
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
+	if ctx == nil {
+		return fmt.Errorf("durable context is required for sleep")
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err := ctx.SleepFor(target.Sub(now))
+	return err
 }
 
 type OpenAIClient interface {
@@ -315,10 +319,11 @@ func (s *Steps) DailyCheckpointLoop(ctx hatchetworker.HatchetContext) error {
 		return err
 	}
 
-	return s.runDailyCheckpoints(ctx, state)
+	durableCtx := hatchetworker.NewDurableHatchetContext(ctx)
+	return s.runDailyCheckpoints(durableCtx, state)
 }
 
-func (s *Steps) runDailyCheckpoints(ctx context.Context, state WeeklyPickState) error {
+func (s *Steps) runDailyCheckpoints(ctx sleepContext, state WeeklyPickState) error {
 	location, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		return fmt.Errorf("load timezone: %w", err)
