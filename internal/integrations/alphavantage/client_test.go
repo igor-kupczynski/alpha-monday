@@ -5,106 +5,91 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"sync"
+	"sync/atomic"
 	"testing"
+
+	"github.com/igor-kupczynski/alpha-monday/internal/integrations/retry"
 )
 
-func TestSnapshotPreviousClosesSuccess(t *testing.T) {
-	prices := map[string]string{
-		"SPY":  "401.25",
-		"AAPL": "178.10",
-		"MSFT": "342.55",
-	}
-	tradingDays := map[string]string{
-		"SPY":  "2026-01-03",
-		"AAPL": "2026-01-03",
-		"MSFT": "2026-01-03",
-	}
-
-	var mu sync.Mutex
-	var order []string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		symbol := r.URL.Query().Get("symbol")
-		mu.Lock()
-		order = append(order, symbol)
-		mu.Unlock()
-
-		payload := map[string]map[string]string{
-			"Global Quote": {
-				"08. previous close":     prices[symbol],
-				"07. latest trading day": tradingDays[symbol],
-			},
-		}
-		data, _ := json.Marshal(payload)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(data)
-	}))
+func TestFetchPreviousCloseRetriesOnServerError(t *testing.T) {
+	server, calls := alphaTestServer([]alphaResponse{
+		{status: http.StatusInternalServerError, body: `{"error":"oops"}`},
+		{status: http.StatusBadGateway, body: `{"error":"oops"}`},
+		{status: http.StatusOK, body: alphaQuoteResponse("SPY", "123.45", "2026-01-30")},
+	})
 	defer server.Close()
 
 	client := NewClient("test-key",
 		WithBaseURL(server.URL),
 		WithHTTPClient(server.Client()),
+		WithRetryConfig(retry.Config{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: 0}),
 	)
 
-	snapshot, err := client.SnapshotPreviousCloses(context.Background(), "SPY", []string{"AAPL", "MSFT"})
+	quote, err := client.FetchPreviousClose(context.Background(), "SPY")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if snapshot["SPY"].PreviousClose != prices["SPY"] {
-		t.Fatalf("expected SPY price %s, got %s", prices["SPY"], snapshot["SPY"].PreviousClose)
+	if quote.PreviousClose != "123.45" {
+		t.Fatalf("expected previous close, got %q", quote.PreviousClose)
 	}
-	if snapshot["SPY"].TradingDay != tradingDays["SPY"] {
-		t.Fatalf("expected SPY trading day %s, got %s", tradingDays["SPY"], snapshot["SPY"].TradingDay)
-	}
-	if snapshot["AAPL"].PreviousClose != prices["AAPL"] {
-		t.Fatalf("expected AAPL price %s, got %s", prices["AAPL"], snapshot["AAPL"].PreviousClose)
-	}
-	if snapshot["AAPL"].TradingDay != tradingDays["AAPL"] {
-		t.Fatalf("expected AAPL trading day %s, got %s", tradingDays["AAPL"], snapshot["AAPL"].TradingDay)
-	}
-	if snapshot["MSFT"].PreviousClose != prices["MSFT"] {
-		t.Fatalf("expected MSFT price %s, got %s", prices["MSFT"], snapshot["MSFT"].PreviousClose)
-	}
-	if snapshot["MSFT"].TradingDay != tradingDays["MSFT"] {
-		t.Fatalf("expected MSFT trading day %s, got %s", tradingDays["MSFT"], snapshot["MSFT"].TradingDay)
-	}
-	if len(order) == 0 || order[0] != "SPY" {
-		t.Fatalf("expected SPY to be fetched first, got %v", order)
+	if calls.Load() != 3 {
+		t.Fatalf("expected 3 attempts, got %d", calls.Load())
 	}
 }
 
-func TestSnapshotPreviousClosesMissingPriceFails(t *testing.T) {
-	prices := map[string]string{
-		"SPY":  "401.25",
-		"AAPL": "",
-	}
-	tradingDays := map[string]string{
-		"SPY":  "2026-01-03",
-		"AAPL": "2026-01-03",
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		symbol := r.URL.Query().Get("symbol")
-		payload := map[string]map[string]string{
-			"Global Quote": {
-				"08. previous close":     prices[symbol],
-				"07. latest trading day": tradingDays[symbol],
-			},
-		}
-		data, _ := json.Marshal(payload)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(data)
-	}))
+func TestFetchPreviousCloseNoRetryOnBadRequest(t *testing.T) {
+	server, calls := alphaTestServer([]alphaResponse{
+		{status: http.StatusBadRequest, body: `{"error":"bad request"}`},
+		{status: http.StatusOK, body: alphaQuoteResponse("SPY", "123.45", "2026-01-30")},
+	})
 	defer server.Close()
 
 	client := NewClient("test-key",
 		WithBaseURL(server.URL),
 		WithHTTPClient(server.Client()),
+		WithRetryConfig(retry.Config{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 0, Jitter: 0}),
 	)
 
-	_, err := client.SnapshotPreviousCloses(context.Background(), "SPY", []string{"AAPL"})
+	_, err := client.FetchPreviousClose(context.Background(), "SPY")
 	if err == nil {
-		t.Fatalf("expected error for missing previous close")
+		t.Fatalf("expected error for bad request")
 	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 attempt, got %d", calls.Load())
+	}
+}
+
+type alphaResponse struct {
+	status int
+	body   string
+}
+
+func alphaTestServer(responses []alphaResponse) (*httptest.Server, *atomic.Int32) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		idx := int(calls.Add(1)) - 1
+		if idx >= len(responses) {
+			idx = len(responses) - 1
+		}
+		resp := responses[idx]
+		if resp.status == 0 {
+			resp.status = http.StatusOK
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.status)
+		_, _ = w.Write([]byte(resp.body))
+	}))
+	return server, &calls
+}
+
+func alphaQuoteResponse(symbol, prevClose, tradingDay string) string {
+	payload := map[string]map[string]string{
+		"Global Quote": {
+			"01. symbol":             symbol,
+			"07. latest trading day": tradingDay,
+			"08. previous close":     prevClose,
+		},
+	}
+	data, _ := json.Marshal(payload)
+	return string(data)
 }

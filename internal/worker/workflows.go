@@ -3,6 +3,7 @@ package worker
 import (
 	"log/slog"
 
+	"github.com/hatchet-dev/hatchet/pkg/client/types"
 	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
 )
 
@@ -13,6 +14,8 @@ const (
 	StepSnapshotPricesID   = "snapshot_initial_prices"
 	StepPersistBatchID     = "persist_batch"
 	weeklyPickCronSchedule = "0 9 * * 1"
+	alphaVantageRateLimitKey   = "alpha_vantage"
+	alphaVantageRateLimitUnits = 4
 )
 
 // WeeklyPickState is the workflow state stored by Hatchet for the weekly workflow.
@@ -71,6 +74,9 @@ func buildWorkflow(spec workflowSpec, logger *slog.Logger, stepDeps *Steps) *hat
 			handler = noopStep(logger, step.ID)
 		}
 		current := hatchetworker.Fn(handler).SetName(step.ID)
+		if step.ID == StepSnapshotPricesID || step.ID == DailyCheckpointStepID {
+			current.SetRateLimit(alphaVantageRateLimit())
+		}
 		if previous != nil {
 			current.AddParents(previous.Name)
 		}
@@ -88,6 +94,16 @@ func buildWorkflow(spec workflowSpec, logger *slog.Logger, stepDeps *Steps) *hat
 	}
 
 	return job
+}
+
+func alphaVantageRateLimit() hatchetworker.RateLimit {
+	units := alphaVantageRateLimitUnits
+	duration := types.Minute
+	return hatchetworker.RateLimit{
+		Key:      alphaVantageRateLimitKey,
+		Units:    &units,
+		Duration: &duration,
+	}
 }
 
 func stepHandlers(steps *Steps, logger *slog.Logger) map[string]any {

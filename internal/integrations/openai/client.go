@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/igor-kupczynski/alpha-monday/internal/integrations/retry"
 )
 
 const (
@@ -31,6 +34,7 @@ type Client struct {
 	temperature float64
 	maxAttempts int
 	httpClient  *http.Client
+	retryConfig retry.Config
 }
 
 type Option func(*Client)
@@ -75,6 +79,12 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
+func WithRetryConfig(config retry.Config) Option {
+	return func(c *Client) {
+		c.retryConfig = config
+	}
+}
+
 func NewClient(apiKey string, opts ...Option) *Client {
 	client := &Client{
 		apiKey:      strings.TrimSpace(apiKey),
@@ -83,6 +93,7 @@ func NewClient(apiKey string, opts ...Option) *Client {
 		temperature: defaultTemperature,
 		maxAttempts: defaultMaxAttempts,
 		httpClient:  http.DefaultClient,
+		retryConfig: retry.DefaultConfig(),
 	}
 
 	for _, opt := range opts {
@@ -146,6 +157,22 @@ type chatResponse struct {
 }
 
 func (c *Client) request(ctx context.Context) (string, error) {
+	var content string
+	err := retry.Do(ctx, c.retryConfig, isRetryableError, func() error {
+		result, err := c.requestOnce(ctx)
+		if err != nil {
+			return err
+		}
+		content = result
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return content, nil
+}
+
+func (c *Client) requestOnce(ctx context.Context) (string, error) {
 	reqBody := chatRequest{
 		Model:       c.model,
 		Temperature: c.temperature,
@@ -185,7 +212,10 @@ func (c *Client) request(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("openai request failed: status %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return "", httpStatusError{
+			status: resp.StatusCode,
+			msg:    fmt.Sprintf("openai request failed: status %s: %s", resp.Status, strings.TrimSpace(string(body))),
+		}
 	}
 
 	var parsed chatResponse
@@ -200,6 +230,37 @@ func (c *Client) request(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("openai response missing content")
 	}
 	return content, nil
+}
+
+type httpStatusError struct {
+	status int
+	msg    string
+}
+
+func (e httpStatusError) Error() string {
+	return e.msg
+}
+
+func (e httpStatusError) StatusCode() int {
+	return e.status
+}
+
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var statusErr httpStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.status == http.StatusTooManyRequests || statusErr.status >= 500
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	return false
 }
 
 func parseAndValidate(content string) ([]Pick, error) {

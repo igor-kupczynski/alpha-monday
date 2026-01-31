@@ -3,10 +3,14 @@ package alphavantage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+
+	"github.com/igor-kupczynski/alpha-monday/internal/integrations/retry"
 )
 
 const defaultBaseURL = "https://www.alphavantage.co/query"
@@ -15,6 +19,7 @@ type Client struct {
 	apiKey     string
 	baseURL    string
 	httpClient *http.Client
+	retryConfig retry.Config
 }
 
 type Quote struct {
@@ -41,11 +46,18 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
+func WithRetryConfig(config retry.Config) Option {
+	return func(c *Client) {
+		c.retryConfig = config
+	}
+}
+
 func NewClient(apiKey string, opts ...Option) *Client {
 	client := &Client{
 		apiKey:     strings.TrimSpace(apiKey),
 		baseURL:    defaultBaseURL,
 		httpClient: http.DefaultClient,
+		retryConfig: retry.DefaultConfig(),
 	}
 
 	for _, opt := range opts {
@@ -100,6 +112,22 @@ type globalQuoteResponse struct {
 }
 
 func (c *Client) FetchPreviousClose(ctx context.Context, symbol string) (Quote, error) {
+	var quote Quote
+	err := retry.Do(ctx, c.retryConfig, isRetryableError, func() error {
+		result, err := c.fetchPreviousCloseOnce(ctx, symbol)
+		if err != nil {
+			return err
+		}
+		quote = result
+		return nil
+	})
+	if err != nil {
+		return Quote{}, err
+	}
+	return quote, nil
+}
+
+func (c *Client) fetchPreviousCloseOnce(ctx context.Context, symbol string) (Quote, error) {
 	symbol = strings.TrimSpace(symbol)
 	if symbol == "" {
 		return Quote{}, fmt.Errorf("symbol is required")
@@ -126,7 +154,10 @@ func (c *Client) FetchPreviousClose(ctx context.Context, symbol string) (Quote, 
 		return Quote{}, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Quote{}, fmt.Errorf("alpha vantage request failed: status %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return Quote{}, httpStatusError{
+			status: resp.StatusCode,
+			msg:    fmt.Sprintf("alpha vantage request failed: status %s: %s", resp.Status, strings.TrimSpace(string(body))),
+		}
 	}
 
 	var parsed globalQuoteResponse
@@ -139,6 +170,37 @@ func (c *Client) FetchPreviousClose(ctx context.Context, symbol string) (Quote, 
 		PreviousClose: strings.TrimSpace(parsed.GlobalQuote["08. previous close"]),
 		TradingDay:    strings.TrimSpace(parsed.GlobalQuote["07. latest trading day"]),
 	}, nil
+}
+
+type httpStatusError struct {
+	status int
+	msg    string
+}
+
+func (e httpStatusError) Error() string {
+	return e.msg
+}
+
+func (e httpStatusError) StatusCode() int {
+	return e.status
+}
+
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var statusErr httpStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.status == http.StatusTooManyRequests || statusErr.status >= 500
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	return false
 }
 
 func requireQuote(quote Quote) error {
