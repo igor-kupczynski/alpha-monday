@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	hatchetclient "github.com/hatchet-dev/hatchet/pkg/client"
 	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
+	hatchet "github.com/hatchet-dev/hatchet/sdks/go"
 	"github.com/igor-kupczynski/alpha-monday/internal/db"
 	"github.com/igor-kupczynski/alpha-monday/internal/integrations/alphavantage"
 	"github.com/igor-kupczynski/alpha-monday/internal/integrations/openai"
@@ -40,20 +42,20 @@ func (realClock) Now() time.Time {
 	return time.Now()
 }
 
-type sleepContext interface {
+type durableSleepContext interface {
 	context.Context
 	SleepFor(duration time.Duration) (*hatchetworker.SingleWaitResult, error)
 }
 
 type Sleeper interface {
-	SleepUntil(ctx sleepContext, target time.Time) error
+	SleepUntil(ctx durableSleepContext, target time.Time) error
 }
 
 type realSleeper struct {
 	clock Clock
 }
 
-func (s realSleeper) SleepUntil(ctx sleepContext, target time.Time) error {
+func (s realSleeper) SleepUntil(ctx durableSleepContext, target time.Time) error {
 	if s.clock == nil {
 		s.clock = realClock{}
 	}
@@ -86,13 +88,16 @@ type Store interface {
 	UpdateBatchStatus(ctx context.Context, batchID string, status string) error
 }
 
+type spawnChildWorkflowFunc func(ctx durableSleepContext, workflowName string, input any) error
+
 type Steps struct {
-	openAI       OpenAIClient
-	alphaVantage AlphaVantageClient
-	store        Store
-	logger       *slog.Logger
-	clock        Clock
-	sleeper      Sleeper
+	openAI             OpenAIClient
+	alphaVantage       AlphaVantageClient
+	store              Store
+	logger             *slog.Logger
+	clock              Clock
+	sleeper            Sleeper
+	spawnChildWorkflow spawnChildWorkflowFunc
 }
 
 func NewSteps(store Store, openAI OpenAIClient, alpha AlphaVantageClient, logger *slog.Logger) *Steps {
@@ -107,6 +112,7 @@ func NewSteps(store Store, openAI OpenAIClient, alpha AlphaVantageClient, logger
 		clock:        realClock{},
 	}
 	steps.sleeper = realSleeper{clock: steps.clock}
+	steps.spawnChildWorkflow = defaultSpawnChildWorkflow
 	return steps
 }
 
@@ -137,7 +143,26 @@ type SnapshotOutput struct {
 	Picks                 []PickWithPrice `json:"picks"`
 }
 
-func (s *Steps) GeneratePicks(ctx hatchetworker.HatchetContext) (*GeneratePicksOutput, error) {
+type WeeklyPickInput struct{}
+
+type DailyCheckpointInput struct {
+	BatchID               string      `json:"batch_id"`
+	BenchmarkSymbol       string      `json:"benchmark_symbol"`
+	BenchmarkInitialPrice string      `json:"benchmark_initial_price"`
+	Picks                 []PickState `json:"picks"`
+	ScheduledAt           string      `json:"scheduled_at"`
+	MarkCompleted         bool        `json:"mark_completed"`
+}
+
+type DailyCheckpointResult struct {
+	Status string `json:"status"`
+}
+
+type DailyCheckpointLoopOutput struct {
+	Completed bool `json:"completed"`
+}
+
+func (s *Steps) GeneratePicks(ctx hatchet.Context, _ WeeklyPickInput) (*GeneratePicksOutput, error) {
 	if s.openAI == nil {
 		return nil, fmt.Errorf("openai client not configured")
 	}
@@ -168,7 +193,7 @@ func (s *Steps) GeneratePicks(ctx hatchetworker.HatchetContext) (*GeneratePicksO
 	return output, nil
 }
 
-func (s *Steps) SnapshotInitialPrices(ctx hatchetworker.HatchetContext) (*SnapshotOutput, error) {
+func (s *Steps) SnapshotInitialPrices(ctx hatchet.Context, _ WeeklyPickInput) (*SnapshotOutput, error) {
 	if s.alphaVantage == nil {
 		return nil, fmt.Errorf("alpha vantage client not configured")
 	}
@@ -233,7 +258,7 @@ func (s *Steps) SnapshotInitialPrices(ctx hatchetworker.HatchetContext) (*Snapsh
 	return output, nil
 }
 
-func (s *Steps) PersistBatch(ctx hatchetworker.HatchetContext) (*WeeklyPickState, error) {
+func (s *Steps) PersistBatch(ctx hatchet.Context, _ WeeklyPickInput) (*WeeklyPickState, error) {
 	if s.store == nil {
 		return nil, fmt.Errorf("db store not configured")
 	}
@@ -303,27 +328,29 @@ func (s *Steps) PersistBatch(ctx hatchetworker.HatchetContext) (*WeeklyPickState
 	return state, nil
 }
 
-func (s *Steps) DailyCheckpointLoop(ctx hatchetworker.HatchetContext) error {
-	if s.alphaVantage == nil {
-		return fmt.Errorf("alpha vantage client not configured")
-	}
-	if s.store == nil {
-		return fmt.Errorf("db store not configured")
-	}
+func (s *Steps) DailyCheckpointLoop(ctx hatchet.DurableContext, _ WeeklyPickInput) (*DailyCheckpointLoopOutput, error) {
 	if s.sleeper == nil {
 		s.sleeper = realSleeper{clock: s.clock}
+	}
+	if s.spawnChildWorkflow == nil {
+		s.spawnChildWorkflow = defaultSpawnChildWorkflow
 	}
 
 	var state WeeklyPickState
 	if err := ctx.StepOutput(StepPersistBatchID, &state); err != nil {
-		return err
+		return nil, err
 	}
 
-	durableCtx := hatchetworker.NewDurableHatchetContext(ctx)
-	return s.runDailyCheckpoints(durableCtx, state)
+	if err := s.runDailyCheckpoints(ctx, state); err != nil {
+		return nil, err
+	}
+	return &DailyCheckpointLoopOutput{Completed: true}, nil
 }
 
-func (s *Steps) runDailyCheckpoints(ctx sleepContext, state WeeklyPickState) error {
+func (s *Steps) runDailyCheckpoints(ctx durableSleepContext, state WeeklyPickState) error {
+	if s.spawnChildWorkflow == nil {
+		s.spawnChildWorkflow = defaultSpawnChildWorkflow
+	}
 	location, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		return fmt.Errorf("load timezone: %w", err)
@@ -340,16 +367,75 @@ func (s *Steps) runDailyCheckpoints(ctx sleepContext, state WeeklyPickState) err
 		if err := s.sleeper.SleepUntil(ctx, scheduledAt); err != nil {
 			return err
 		}
-		if err := s.runDailyCheckpoint(ctx, state, scheduledAt); err != nil {
+		input := DailyCheckpointInput{
+			BatchID:               state.BatchID,
+			BenchmarkSymbol:       state.BenchmarkSymbol,
+			BenchmarkInitialPrice: state.BenchmarkInitialPrice,
+			Picks:                 state.Picks,
+			ScheduledAt:           scheduledAt.Format(time.RFC3339),
+			MarkCompleted:         day == dailyCheckpointDays-1,
+		}
+		if err := s.spawnChildWorkflow(ctx, DailyCheckpointWorkflowID, input); err != nil {
 			return err
 		}
 	}
 
-	if err := s.store.UpdateBatchStatus(ctx, state.BatchID, batchStatusCompleted); err != nil {
-		return fmt.Errorf("update batch status: %w", err)
+	return nil
+}
+
+func defaultSpawnChildWorkflow(ctx durableSleepContext, workflowName string, input any) error {
+	spawner, ok := ctx.(interface {
+		SpawnWorkflow(workflowName string, input any, opts *hatchetworker.SpawnWorkflowOpts) (*hatchetclient.Workflow, error)
+	})
+	if !ok {
+		return fmt.Errorf("durable context does not support SpawnWorkflow")
+	}
+	workflow, err := spawner.SpawnWorkflow(workflowName, input, nil)
+	if err != nil {
+		return err
+	}
+	_, err = workflow.Result()
+	return err
+}
+
+func (s *Steps) DailyCheckpoint(ctx hatchet.Context, input DailyCheckpointInput) (*DailyCheckpointResult, error) {
+	return s.runDailyCheckpointTask(ctx, input)
+}
+
+func (s *Steps) runDailyCheckpointTask(ctx context.Context, input DailyCheckpointInput) (*DailyCheckpointResult, error) {
+	if s.alphaVantage == nil {
+		return nil, fmt.Errorf("alpha vantage client not configured")
+	}
+	if s.store == nil {
+		return nil, fmt.Errorf("db store not configured")
+	}
+	if strings.TrimSpace(input.ScheduledAt) == "" {
+		return nil, fmt.Errorf("scheduled_at is required")
 	}
 
-	return nil
+	scheduledAt, err := time.Parse(time.RFC3339, input.ScheduledAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid scheduled_at %q: %w", input.ScheduledAt, err)
+	}
+
+	state := WeeklyPickState{
+		BatchID:               input.BatchID,
+		BenchmarkSymbol:       input.BenchmarkSymbol,
+		BenchmarkInitialPrice: input.BenchmarkInitialPrice,
+		Picks:                 input.Picks,
+	}
+
+	if err := s.runDailyCheckpoint(ctx, state, scheduledAt); err != nil {
+		return nil, err
+	}
+
+	if input.MarkCompleted {
+		if err := s.store.UpdateBatchStatus(ctx, input.BatchID, batchStatusCompleted); err != nil {
+			return nil, fmt.Errorf("update batch status: %w", err)
+		}
+	}
+
+	return &DailyCheckpointResult{Status: "ok"}, nil
 }
 
 func (s *Steps) runDailyCheckpoint(ctx context.Context, state WeeklyPickState, scheduledAt time.Time) error {
@@ -567,4 +653,4 @@ func parseDate(value string) (time.Time, error) {
 	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC), nil
 }
 
-var _ context.Context = hatchetworker.HatchetContext(nil)
+var _ context.Context = hatchet.Context(nil)

@@ -1,17 +1,20 @@
 package worker
 
 import (
+	"fmt"
 	"log/slog"
 
-	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
+	"github.com/hatchet-dev/hatchet/pkg/client/types"
+	hatchet "github.com/hatchet-dev/hatchet/sdks/go"
 )
 
 const (
 	WeeklyPickWorkflowID           = "weekly_pick_v1"
-	DailyCheckpointStepID          = "daily_checkpoint_v1"
+	DailyCheckpointWorkflowID      = "daily_checkpoint_v1"
 	StepGeneratePicksID            = "generate_picks"
 	StepSnapshotPricesID           = "snapshot_initial_prices"
 	StepPersistBatchID             = "persist_batch"
+	StepDailyCheckpointLoopID      = "daily_checkpoint_loop"
 	weeklyPickCronSchedule         = "0 9 * * 1"
 	alphaVantageRateLimitMinuteKey = "alpha_vantage_minute"
 	alphaVantageRateLimitDayKey    = "alpha_vantage_day"
@@ -38,101 +41,155 @@ type PickState struct {
 }
 
 type workflowSpec struct {
-	ID       string
-	Schedule string
-	Steps    []stepSpec
+	ID         string
+	Cron       string
+	Standalone bool
+	Steps      []stepSpec
 }
 
 type stepSpec struct {
-	ID string
+	ID         string
+	Durable    bool
+	RateLimits []rateLimitSpec
+}
+
+type rateLimitSpec struct {
+	Key   string
+	Units int
 }
 
 func workflowSpecs() []workflowSpec {
 	return []workflowSpec{
-		{
-			ID:       WeeklyPickWorkflowID,
-			Schedule: weeklyPickCronSchedule,
-			Steps: []stepSpec{
-				{ID: StepGeneratePicksID},
-				{ID: StepSnapshotPricesID},
-				{ID: StepPersistBatchID},
-				{ID: DailyCheckpointStepID},
-			},
+		weeklyWorkflowSpec(),
+		dailyCheckpointWorkflowSpec(),
+	}
+}
+
+func weeklyWorkflowSpec() workflowSpec {
+	return workflowSpec{
+		ID:   WeeklyPickWorkflowID,
+		Cron: weeklyPickCronSchedule,
+		Steps: []stepSpec{
+			{ID: StepGeneratePicksID},
+			{ID: StepSnapshotPricesID, RateLimits: alphaVantageRateLimitSpecs()},
+			{ID: StepPersistBatchID},
+			{ID: StepDailyCheckpointLoopID, Durable: true},
 		},
 	}
 }
 
-func buildWorkflow(spec workflowSpec, logger *slog.Logger, stepDeps *Steps) *hatchetworker.WorkflowJob {
-	if logger == nil {
-		logger = slog.Default()
+func dailyCheckpointWorkflowSpec() workflowSpec {
+	return workflowSpec{
+		ID:         DailyCheckpointWorkflowID,
+		Standalone: true,
+		Steps: []stepSpec{
+			{ID: DailyCheckpointWorkflowID, RateLimits: alphaVantageRateLimitSpecs()},
+		},
+	}
+}
+
+func BuildWorkflows(client *hatchet.Client, logger *slog.Logger, steps *Steps) ([]hatchet.WorkflowBase, error) {
+	if client == nil {
+		return nil, fmt.Errorf("hatchet client is required")
+	}
+	if steps == nil {
+		return nil, fmt.Errorf("steps are required")
 	}
 
-	workflowSteps := make([]*hatchetworker.WorkflowStep, 0, len(spec.Steps))
-	var previous *hatchetworker.WorkflowStep
-	handlers := stepHandlers(stepDeps, logger)
-	for _, step := range spec.Steps {
-		handler := handlers[step.ID]
-		if handler == nil {
-			handler = noopStep(logger, step.ID)
-		}
-		current := hatchetworker.Fn(handler).SetName(step.ID)
-		if step.ID == StepSnapshotPricesID || step.ID == DailyCheckpointStepID {
-			for _, rateLimit := range alphaVantageRateLimits() {
-				current.SetRateLimit(rateLimit)
+	handlers := stepHandlers(steps, logger)
+	workflows := make([]hatchet.WorkflowBase, 0, len(workflowSpecs()))
+
+	for _, spec := range workflowSpecs() {
+		if spec.Standalone {
+			if len(spec.Steps) != 1 {
+				return nil, fmt.Errorf("standalone workflow %q must define exactly one step", spec.ID)
 			}
+			step := spec.Steps[0]
+			if step.ID != spec.ID {
+				return nil, fmt.Errorf("standalone workflow %q step id must match workflow id", spec.ID)
+			}
+			handler := handlers[step.ID]
+			if handler == nil {
+				return nil, fmt.Errorf("missing handler for step %q", step.ID)
+			}
+			opts := taskOptionsFromStep(step, nil)
+			standaloneOpts := make([]hatchet.StandaloneTaskOption, 0, len(opts))
+			for _, opt := range opts {
+				standaloneOpts = append(standaloneOpts, opt)
+			}
+			workflows = append(workflows, client.NewStandaloneTask(step.ID, handler, standaloneOpts...))
+			continue
 		}
-		if previous != nil {
-			current.AddParents(previous.Name)
+
+		workflow := client.NewWorkflow(spec.ID, workflowOptionsFromSpec(spec)...)
+		var previous *hatchet.Task
+		for _, step := range spec.Steps {
+			handler := handlers[step.ID]
+			if handler == nil {
+				return nil, fmt.Errorf("missing handler for step %q", step.ID)
+			}
+			opts := taskOptionsFromStep(step, previous)
+			var task *hatchet.Task
+			if step.Durable {
+				task = workflow.NewDurableTask(step.ID, handler, opts...)
+			} else {
+				task = workflow.NewTask(step.ID, handler, opts...)
+			}
+			previous = task
 		}
-		workflowSteps = append(workflowSteps, current)
-		previous = current
+		workflows = append(workflows, workflow)
 	}
 
-	job := &hatchetworker.WorkflowJob{
-		Name:  spec.ID,
-		Steps: workflowSteps,
-	}
-
-	if spec.Schedule != "" {
-		job.On = hatchetworker.Cron(spec.Schedule)
-	}
-
-	return job
+	return workflows, nil
 }
 
-func alphaVantageRateLimits() []hatchetworker.RateLimit {
-	units := alphaVantageRateLimitUnits
-	return []hatchetworker.RateLimit{
-		{
-			Key:   alphaVantageRateLimitMinuteKey,
-			Units: &units,
-		},
-		{
-			Key:   alphaVantageRateLimitDayKey,
-			Units: &units,
-		},
+func workflowOptionsFromSpec(spec workflowSpec) []hatchet.WorkflowOption {
+	opts := []hatchet.WorkflowOption{}
+	if spec.Cron != "" {
+		opts = append(opts, hatchet.WithWorkflowCron(spec.Cron))
 	}
+	return opts
+}
+
+func taskOptionsFromStep(step stepSpec, parent *hatchet.Task) []hatchet.TaskOption {
+	opts := []hatchet.TaskOption{}
+	if parent != nil {
+		opts = append(opts, hatchet.WithParents(parent))
+	}
+	if len(step.RateLimits) > 0 {
+		opts = append(opts, hatchet.WithRateLimits(rateLimitSpecsToTypes(step.RateLimits)...))
+	}
+	return opts
+}
+
+func alphaVantageRateLimitSpecs() []rateLimitSpec {
+	return []rateLimitSpec{
+		{Key: alphaVantageRateLimitMinuteKey, Units: alphaVantageRateLimitUnits},
+		{Key: alphaVantageRateLimitDayKey, Units: alphaVantageRateLimitUnits},
+	}
+}
+
+func rateLimitSpecsToTypes(specs []rateLimitSpec) []*types.RateLimit {
+	limits := make([]*types.RateLimit, 0, len(specs))
+	for _, spec := range specs {
+		units := spec.Units
+		limits = append(limits, &types.RateLimit{
+			Key:   spec.Key,
+			Units: &units,
+		})
+	}
+	return limits
 }
 
 func stepHandlers(steps *Steps, logger *slog.Logger) map[string]any {
-	handlers := map[string]any{}
-	if steps != nil {
-		handlers[StepGeneratePicksID] = steps.GeneratePicks
-		handlers[StepSnapshotPricesID] = steps.SnapshotInitialPrices
-		handlers[StepPersistBatchID] = steps.PersistBatch
-		handlers[DailyCheckpointStepID] = steps.DailyCheckpointLoop
-	} else {
-		handlers[DailyCheckpointStepID] = noopStep(logger, DailyCheckpointStepID)
+	if logger == nil {
+		logger = slog.Default()
 	}
-	return handlers
-}
-
-func noopStep(logger *slog.Logger, stepName string) func(hatchetworker.HatchetContext) error {
-	return func(ctx hatchetworker.HatchetContext) error {
-		if logger == nil {
-			logger = slog.Default()
-		}
-		logger.Info("step stub", "step", stepName)
-		return nil
+	return map[string]any{
+		StepGeneratePicksID:       withWorkflowLogging(logger, steps.GeneratePicks),
+		StepSnapshotPricesID:      withWorkflowLogging(logger, steps.SnapshotInitialPrices),
+		StepPersistBatchID:        withWorkflowLogging(logger, steps.PersistBatch),
+		StepDailyCheckpointLoopID: withDurableWorkflowLogging(logger, steps.DailyCheckpointLoop),
+		DailyCheckpointWorkflowID: withWorkflowLogging(logger, steps.DailyCheckpoint),
 	}
 }

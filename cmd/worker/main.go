@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	hatchetclient "github.com/hatchet-dev/hatchet/pkg/client"
-	hatchetworker "github.com/hatchet-dev/hatchet/pkg/worker"
+	hatchet "github.com/hatchet-dev/hatchet/sdks/go"
 	"github.com/igor-kupczynski/alpha-monday/internal/db"
 	"github.com/igor-kupczynski/alpha-monday/internal/integrations/alphavantage"
 	"github.com/igor-kupczynski/alpha-monday/internal/integrations/openai"
@@ -46,7 +46,7 @@ func main() {
 		clientOpts = append(clientOpts, hatchetclient.WithHostPort(host, port))
 	}
 
-	client, err := hatchetclient.New(clientOpts...)
+	client, err := hatchet.NewClient(clientOpts...)
 	if err != nil {
 		logger.Error("hatchet client init failed", "error", err)
 		os.Exit(1)
@@ -68,18 +68,15 @@ func main() {
 	alphaClient := alphavantage.NewClient(cfg.AlphaVantageAPIKey)
 	steps := appworker.NewSteps(store, openAIClient, alphaClient, logger)
 
-	w, err := hatchetworker.NewWorker(
-		hatchetworker.WithClient(client),
-		hatchetworker.WithName(cfg.WorkerName),
-	)
+	workflows, err := appworker.BuildWorkflows(client, logger, steps)
 	if err != nil {
-		logger.Error("hatchet worker init failed", "error", err)
+		logger.Error("workflow build failed", "error", err)
 		os.Exit(1)
 	}
-	w.Use(appworker.WorkflowLogger(logger))
 
-	if err := appworker.RegisterWorkflows(w, logger, steps); err != nil {
-		logger.Error("workflow registration failed", "error", err)
+	w, err := client.NewWorker(cfg.WorkerName, hatchet.WithWorkflows(workflows...))
+	if err != nil {
+		logger.Error("hatchet worker init failed", "error", err)
 		os.Exit(1)
 	}
 

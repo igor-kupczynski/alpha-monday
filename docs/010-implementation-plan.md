@@ -64,6 +64,7 @@ References: HLD `docs/001-high-level-design.md` (Workflows, Components), LLD `do
 ### Worker baseline
 - [x] Create `cmd/worker` entrypoint with graceful shutdown.
 - [x] Add worker bootstrap (config, logger, Hatchet client).
+- [x] Migrate worker to Hatchet Go SDK v1 and register workflows via the v1 client.
 - [x] Register workflows and steps with Hatchet at startup.
 - [x] Define workflow state struct and no-op step handlers.
 
@@ -104,7 +105,7 @@ References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computat
 - [x] Metrics tests: absolute_return_pct and vs_benchmark_pct formulas; reject non-finite values.
 
 ### Implementation
-- [x] Implement sleep + daily loop for 14 calendar days (day 1..14), scheduled at 9am ET, using Hatchet durable sleep (Go SDK DurableContext.SleepFor).
+- [x] Implement sleep + daily loop for 14 calendar days (day 1..14), scheduled at 9am ET, using Hatchet durable sleep and spawning a child workflow for daily checkpoint I/O.
 - [x] Fetch previous trading day close prices with fan-out + concurrency cap; set checkpoint_date to the trading date of the previous close.
 - [x] Compute metrics per LLD and persist checkpoints + pick_checkpoint_metrics.
 - [x] Mark batch status completed after day 14 checkpoint (computed or skipped).

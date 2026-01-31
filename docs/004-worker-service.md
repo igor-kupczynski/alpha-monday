@@ -6,7 +6,7 @@ Date: 2026-01-30
 Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the only component that writes to Postgres.
 
 ## Service Structure
-- Language/runtime: Go (Hatchet SDK), aligned with API service.
+- Language/runtime: Go (Hatchet SDK v1), aligned with API service.
 - Entry point: `cmd/worker`.
 - Modules:
   - worker: Hatchet client, worker bootstrap, workflow registration
@@ -53,6 +53,10 @@ Hatchet worker runs the weekly workflow and daily checkpoints. The worker is the
 - Configure Hatchet rate limits on worker startup:
   - alpha_vantage_minute: 5 req/min
   - alpha_vantage_day: 500 req/day
+
+## Durable Tasks
+- The daily checkpoint loop is a durable task that only sleeps and spawns a child workflow.
+- All external I/O (Alpha Vantage + Postgres writes) occurs inside the daily checkpoint child workflow.
 
 ## Testing
 - Unit tests for computation.

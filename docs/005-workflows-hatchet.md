@@ -4,6 +4,7 @@ Date: 2026-01-30
 
 ## Overview
 Defines Hatchet workflows and their state, steps, retries, and rate limiting.
+The daily checkpoint loop is a durable task that performs no I/O; it sleeps and spawns a child workflow for the actual API calls and DB writes.
 
 ## Workflow: Weekly Pick (cron)
 Trigger:
@@ -28,15 +29,16 @@ Steps:
 3. persist_batch
    - Create batch + picks + initial checkpoint in a transaction.
    - Initial checkpoint_date is the trading day of the previous close.
-4. daily_loop (for day in 1..14)
+4. daily_checkpoint_loop (durable task, for day in 1..14)
    - sleep until next day at 9am ET using Hatchet durable sleep (Go SDK DurableContext.SleepFor).
-   - run daily_checkpoint using previous trading day close (checkpoint_date is that trading day and may be before run_date on day 1).
+   - spawn daily_checkpoint child workflow (checkpoint_date is the previous trading day and may be before run_date on day 1).
+   - pass scheduled_at and mark_completed=true on day 14 to allow the child workflow to finalize the batch.
    - sleep uses absolute 9am ET targets; if a run resumes after the target time, it proceeds without sleeping.
 
-## Step: Daily Checkpoint
+## Workflow: Daily Checkpoint (child)
 Inputs:
-- batch_id, list of picks, benchmark_symbol, benchmark_initial_price
-Step ID:
+- batch_id, list of picks, benchmark_symbol, benchmark_initial_price, scheduled_at, mark_completed
+Workflow ID:
 - `daily_checkpoint_v1`
 
 Steps:
@@ -51,6 +53,8 @@ Steps:
    - Compute benchmark_return_pct and pick metrics.
 4. persist_checkpoint
    - Insert checkpoint and pick_checkpoint_metrics.
+5. finalize_batch (day 14 only)
+   - If mark_completed=true, update batch status to completed after persisting the checkpoint.
 
 ## Retries
 - Transient API failures: retry 3 attempts with exponential backoff + jitter (base 500ms, max 5s).

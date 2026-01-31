@@ -54,7 +54,7 @@ This document is the high-level design. Component-specific low-level design docs
   - Hatchet worker running workflows and steps.
   - Calls OpenAI and Alpha Vantage.
   - Writes batches, picks, checkpoints, and metrics.
-  - Implementation: Go + Hatchet SDK.
+  - Implementation: Go + Hatchet SDK (v1).
 - Database (Neon Postgres)
   - Source of truth for domain tables.
 - Hatchet Cloud
@@ -69,7 +69,7 @@ Steps:
 3. Persist batch creation and initial snapshot data.
 4. For day in 1..14:
    - Durable sleep until next day at 9am ET.
-   - Run Daily Checkpoint step (fan-out previous-close fetch; checkpoint_date is previous trading day).
+   - Spawn Daily Checkpoint child workflow (fan-out previous-close fetch; checkpoint_date is previous trading day).
 
 Hatchet patterns:
 - Cron: weekly kickoff.
@@ -79,7 +79,7 @@ Hatchet patterns:
 - Rate limiting: price fetch step concurrency and per-minute caps.
 - Retries: transient API failures with exponential backoff.
 
-### 2) Daily Checkpoint Step (within workflow)
+### 2) Daily Checkpoint Workflow (child)
 Steps:
 1. Fetch previous trading day close for each ticker and SPY (fan-out).
 2. If previous close is unavailable, emit checkpoint_skipped event.

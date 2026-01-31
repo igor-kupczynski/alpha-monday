@@ -25,7 +25,7 @@ type fakeSleeper struct {
 	calls []time.Time
 }
 
-func (f *fakeSleeper) SleepUntil(ctx sleepContext, target time.Time) error {
+func (f *fakeSleeper) SleepUntil(ctx durableSleepContext, target time.Time) error {
 	f.calls = append(f.calls, target)
 	if target.After(f.clock.now) {
 		f.clock.now = target
@@ -137,7 +137,6 @@ func TestDailyCheckpointLoopSchedulesAndCompletes(t *testing.T) {
 	startTime := time.Date(2026, 1, 5, 8, 0, 0, 0, location)
 	clock := &fakeClock{now: startTime}
 	sleeper := &fakeSleeper{clock: clock}
-	store := &fakeStore{}
 
 	alpha := &sequenceAlpha{
 		nextTradingDay:  time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
@@ -146,11 +145,22 @@ func TestDailyCheckpointLoopSchedulesAndCompletes(t *testing.T) {
 		benchmarkSymbol: "SPY",
 	}
 
+	var childCalls []DailyCheckpointInput
 	steps := &Steps{
 		alphaVantage: alpha,
-		store:        store,
 		clock:        clock,
 		sleeper:      sleeper,
+		spawnChildWorkflow: func(ctx durableSleepContext, workflowName string, input any) error {
+			if workflowName != DailyCheckpointWorkflowID {
+				t.Fatalf("expected workflow %q, got %q", DailyCheckpointWorkflowID, workflowName)
+			}
+			payload, ok := input.(DailyCheckpointInput)
+			if !ok {
+				t.Fatalf("expected DailyCheckpointInput, got %T", input)
+			}
+			childCalls = append(childCalls, payload)
+			return nil
+		},
 	}
 
 	state := WeeklyPickState{
@@ -179,22 +189,71 @@ func TestDailyCheckpointLoopSchedulesAndCompletes(t *testing.T) {
 		}
 	}
 
-	if len(store.checkpoints) != 14 {
-		t.Fatalf("expected 14 checkpoints, got %d", len(store.checkpoints))
+	if len(childCalls) != dailyCheckpointDays {
+		t.Fatalf("expected %d child workflow calls, got %d", dailyCheckpointDays, len(childCalls))
+	}
+	for i, call := range childCalls {
+		parsed, err := time.Parse(time.RFC3339, call.ScheduledAt)
+		if err != nil {
+			t.Fatalf("parse scheduled_at: %v", err)
+		}
+		if !parsed.Equal(expectedTargets[i]) {
+			t.Fatalf("expected scheduled_at %s, got %s", expectedTargets[i], parsed)
+		}
+		if call.BatchID != state.BatchID {
+			t.Fatalf("expected batch_id %q, got %q", state.BatchID, call.BatchID)
+		}
+		if call.BenchmarkSymbol != state.BenchmarkSymbol {
+			t.Fatalf("expected benchmark_symbol %q, got %q", state.BenchmarkSymbol, call.BenchmarkSymbol)
+		}
+		if call.MarkCompleted != (i == dailyCheckpointDays-1) {
+			t.Fatalf("expected mark_completed %t for day %d, got %t", i == dailyCheckpointDays-1, i+1, call.MarkCompleted)
+		}
+	}
+}
+
+func TestDailyCheckpointMarksBatchCompleted(t *testing.T) {
+	location, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
 	}
 
-	expectedDates := expectedTradingDays(time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), 14)
-	for i, input := range store.checkpoints {
-		if input.Status != "computed" {
-			t.Fatalf("expected computed status, got %s", input.Status)
-		}
-		if !input.CheckpointDate.Equal(expectedDates[i]) {
-			t.Fatalf("expected checkpoint date %s, got %s", expectedDates[i], input.CheckpointDate)
-		}
+	clock := &fakeClock{now: time.Date(2026, 1, 6, 9, 0, 0, 0, location)}
+	store := &fakeStore{}
+	alpha := &staticAlpha{
+		quotes: map[string]alphavantage.Quote{
+			"SPY":  {Symbol: "SPY", PreviousClose: "100.00", TradingDay: "2026-01-05"},
+			"AAPL": {Symbol: "AAPL", PreviousClose: "50.00", TradingDay: "2026-01-05"},
+		},
+	}
+
+	steps := &Steps{
+		alphaVantage: alpha,
+		store:        store,
+		clock:        clock,
+	}
+
+	scheduledAt := time.Date(2026, 1, 6, 9, 0, 0, 0, location)
+	input := DailyCheckpointInput{
+		BatchID:               "batch-999",
+		BenchmarkSymbol:       "SPY",
+		BenchmarkInitialPrice: "95.00",
+		Picks: []PickState{
+			{PickID: "pick-1", Ticker: "AAPL", InitialPrice: "45.00"},
+		},
+		ScheduledAt:   scheduledAt.Format(time.RFC3339),
+		MarkCompleted: true,
+	}
+
+	if _, err := steps.runDailyCheckpointTask(context.Background(), input); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if len(store.statusUpdates) != 1 || store.statusUpdates[0] != "completed" {
 		t.Fatalf("expected completed status update, got %v", store.statusUpdates)
+	}
+	if len(store.statusBatchIDs) != 1 || store.statusBatchIDs[0] != input.BatchID {
+		t.Fatalf("expected batch_id %q, got %v", input.BatchID, store.statusBatchIDs)
 	}
 }
 
@@ -381,21 +440,11 @@ func expectedDailyTargets(runDate string, location *time.Location) []time.Time {
 	if err != nil {
 		panic(err)
 	}
-	targets := make([]time.Time, 0, 14)
-	for i := 0; i < 14; i++ {
+	targets := make([]time.Time, 0, dailyCheckpointDays)
+	for i := 0; i < dailyCheckpointDays; i++ {
 		targets = append(targets, time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 9, 0, 0, 0, location).AddDate(0, 0, i))
 	}
 	return targets
-}
-
-func expectedTradingDays(start time.Time, count int) []time.Time {
-	result := make([]time.Time, 0, count)
-	current := start
-	for i := 0; i < count; i++ {
-		result = append(result, time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC))
-		current = nextWeekday(current.AddDate(0, 0, 1))
-	}
-	return result
 }
 
 func nextWeekday(candidate time.Time) time.Time {

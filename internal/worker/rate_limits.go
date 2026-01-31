@@ -4,25 +4,28 @@ import (
 	"fmt"
 	"log/slog"
 
-	hatchetclient "github.com/hatchet-dev/hatchet/pkg/client"
 	"github.com/hatchet-dev/hatchet/pkg/client/types"
+	hatchet "github.com/hatchet-dev/hatchet/sdks/go"
+	"github.com/hatchet-dev/hatchet/sdks/go/features"
 )
 
-func ConfigureRateLimits(client hatchetclient.Client, logger *slog.Logger) error {
+func ConfigureRateLimits(client *hatchet.Client, logger *slog.Logger) error {
 	if client == nil {
 		return fmt.Errorf("hatchet client is required")
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if err := client.Admin().PutRateLimit(alphaVantageRateLimitMinuteKey, &types.RateLimitOpts{
-		Max:      alphaVantageRateLimitMaxMinute,
+	if err := client.RateLimits().Upsert(features.CreateRatelimitOpts{
+		Key:      alphaVantageRateLimitMinuteKey,
+		Limit:    alphaVantageRateLimitMaxMinute,
 		Duration: types.Minute,
 	}); err != nil {
 		return fmt.Errorf("configure minute rate limit: %w", err)
 	}
-	if err := client.Admin().PutRateLimit(alphaVantageRateLimitDayKey, &types.RateLimitOpts{
-		Max:      alphaVantageRateLimitMaxDay,
+	if err := client.RateLimits().Upsert(features.CreateRatelimitOpts{
+		Key:      alphaVantageRateLimitDayKey,
+		Limit:    alphaVantageRateLimitMaxDay,
 		Duration: types.Day,
 	}); err != nil {
 		return fmt.Errorf("configure day rate limit: %w", err)
