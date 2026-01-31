@@ -10,6 +10,7 @@ import (
 )
 
 var ErrRunDateConflict = errors.New("run_date already exists")
+var ErrCheckpointConflict = errors.New("checkpoint already exists")
 
 type NewPick struct {
 	Ticker       string
@@ -34,6 +35,26 @@ type CreateBatchResult struct {
 	BatchID      string
 	CheckpointID string
 	Picks        []Pick
+}
+
+type NewCheckpointMetric struct {
+	PickID            string
+	CurrentPrice      string
+	AbsoluteReturnPct string
+	VsBenchmarkPct    string
+}
+
+type CreateCheckpointInput struct {
+	BatchID            string
+	CheckpointDate     time.Time
+	Status             string
+	BenchmarkPrice     *string
+	BenchmarkReturnPct *string
+	Metrics            []NewCheckpointMetric
+}
+
+type CreateCheckpointResult struct {
+	CheckpointID string
 }
 
 func (s *Store) CreateBatchWithInitialCheckpoint(ctx context.Context, input CreateBatchInput) (CreateBatchResult, error) {
@@ -113,6 +134,72 @@ func (s *Store) CreateBatchWithInitialCheckpoint(ctx context.Context, input Crea
 	}, nil
 }
 
+func (s *Store) CreateCheckpointWithMetrics(ctx context.Context, input CreateCheckpointInput) (CreateCheckpointResult, error) {
+	if input.Status == "computed" {
+		if input.BenchmarkPrice == nil || input.BenchmarkReturnPct == nil {
+			return CreateCheckpointResult{}, errors.New("benchmark price and return are required for computed checkpoint")
+		}
+	} else if input.Status == "skipped" {
+		if input.BenchmarkPrice != nil || input.BenchmarkReturnPct != nil || len(input.Metrics) > 0 {
+			return CreateCheckpointResult{}, errors.New("skipped checkpoint cannot include benchmark metrics or pick metrics")
+		}
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return CreateCheckpointResult{}, err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	checkpointID := uuid.New()
+	_, err = tx.Exec(ctx, `
+        INSERT INTO checkpoints (id, batch_id, checkpoint_date, status, benchmark_price, benchmark_return_pct)
+        VALUES ($1, $2, $3, $4, $5, $6)`,
+		checkpointID,
+		input.BatchID,
+		input.CheckpointDate,
+		input.Status,
+		input.BenchmarkPrice,
+		input.BenchmarkReturnPct,
+	)
+	if err != nil {
+		if isCheckpointConflict(err) {
+			return CreateCheckpointResult{}, ErrCheckpointConflict
+		}
+		return CreateCheckpointResult{}, err
+	}
+
+	for _, metric := range input.Metrics {
+		metricID := uuid.New()
+		_, err := tx.Exec(ctx, `
+            INSERT INTO pick_checkpoint_metrics (id, checkpoint_id, pick_id, current_price, absolute_return_pct, vs_benchmark_pct)
+            VALUES ($1, $2, $3, $4, $5, $6)`,
+			metricID,
+			checkpointID,
+			metric.PickID,
+			metric.CurrentPrice,
+			metric.AbsoluteReturnPct,
+			metric.VsBenchmarkPct,
+		)
+		if err != nil {
+			return CreateCheckpointResult{}, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return CreateCheckpointResult{}, err
+	}
+
+	return CreateCheckpointResult{CheckpointID: checkpointID.String()}, nil
+}
+
+func (s *Store) UpdateBatchStatus(ctx context.Context, batchID string, status string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE batches SET status = $2 WHERE id = $1`, batchID, status)
+	return err
+}
+
 func isRunDateConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
@@ -122,6 +209,20 @@ func isRunDateConflict(err error) bool {
 		return false
 	}
 	if pgErr.ConstraintName == "batches_run_date_unique" {
+		return true
+	}
+	return false
+}
+
+func isCheckpointConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	if pgErr.Code != "23505" {
+		return false
+	}
+	if pgErr.ConstraintName == "checkpoints_batch_date_unique" {
 		return true
 	}
 	return false

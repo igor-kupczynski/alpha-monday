@@ -99,15 +99,15 @@ References: HLD `docs/001-high-level-design.md` (Daily Checkpoint Step, Computat
 - If previous close is missing for SPY or any pick, skip the entire checkpoint.
 
 ### Tests first
-- [ ] Checkpoint loop tests: 14 calendar days, durable sleep scheduling, checkpoint_date uses previous trading day (can be before run_date), and batch completion.
-- [ ] Market-closed tests: SPY previous close missing -> checkpoint skipped; pick previous close missing -> checkpoint skipped.
-- [ ] Metrics tests: absolute_return_pct and vs_benchmark_pct formulas; reject non-finite values.
+- [x] Checkpoint loop tests: 14 calendar days, sleep scheduling, checkpoint_date uses previous trading day (can be before run_date), and batch completion.
+- [x] Market-closed tests: SPY previous close missing -> checkpoint skipped; pick previous close missing -> checkpoint skipped.
+- [x] Metrics tests: absolute_return_pct and vs_benchmark_pct formulas; reject non-finite values.
 
 ### Implementation
-- [ ] Implement durable sleep + daily loop for 14 calendar days (day 1..14), scheduled at 9am ET.
-- [ ] Fetch previous trading day close prices with fan-out + concurrency cap; set checkpoint_date to the trading date of the previous close.
-- [ ] Compute metrics per LLD and persist checkpoints + pick_checkpoint_metrics.
-- [ ] Mark batch status completed after day 14 checkpoint (computed or skipped).
+- [x] Implement sleep + daily loop for 14 calendar days (day 1..14), scheduled at 9am ET.
+- [x] Fetch previous trading day close prices with fan-out + concurrency cap; set checkpoint_date to the trading date of the previous close.
+- [x] Compute metrics per LLD and persist checkpoints + pick_checkpoint_metrics.
+- [x] Mark batch status completed after day 14 checkpoint (computed or skipped).
 
 **Working feature:** Checkpoints are created daily with metrics or skipped status.
 

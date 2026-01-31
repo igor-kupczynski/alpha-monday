@@ -29,8 +29,9 @@ Steps:
    - Create batch + picks + initial checkpoint in a transaction.
    - Initial checkpoint_date is the trading day of the previous close.
 4. daily_loop (for day in 1..14)
-   - durable_sleep until next day at 9am ET.
+   - sleep until next day at 9am ET (in-process sleeper; durable sleep not available in Go SDK yet).
    - run daily_checkpoint using previous trading day close (checkpoint_date is that trading day and may be before run_date on day 1).
+   - sleep uses absolute 9am ET targets; if a run resumes after the target time, it proceeds without sleeping.
 
 ## Step: Daily Checkpoint
 Inputs:
@@ -45,6 +46,7 @@ Steps:
    - Rate limit: 5 req/min via Hatchet.
 2. handle_market_closed
    - If SPY or any pick previous close unavailable, insert checkpoint with status=skipped.
+   - If SPY trading day is unavailable (market closed), fallback checkpoint_date to the previous weekday.
 3. compute_metrics
    - Compute benchmark_return_pct and pick metrics.
 4. persist_checkpoint
@@ -61,6 +63,7 @@ Steps:
 ## Idempotency
 - Checkpoint step safe for retries due to unique constraints.
 - Batch creation safe due to unique run_date.
+ - Duplicate checkpoint_date inserts are treated as already completed and skipped.
 
 ## Metrics and Monitoring
 - Log step duration.

@@ -17,8 +17,7 @@ Defines computation of daily returns and benchmark comparisons.
 - vs_benchmark_pct = absolute_return_pct - benchmark_return_pct
 
 ## Precision and Rounding
-- Store all values as numeric.
-- Do not round during storage.
+- Store all values as numeric with 8 decimal places (scale=8).
 - Round to 2 decimal places in API output (display only).
 
 ## Edge Cases

@@ -96,8 +96,10 @@ func stepHandlers(steps *Steps, logger *slog.Logger) map[string]any {
 		handlers[StepGeneratePicksID] = steps.GeneratePicks
 		handlers[StepSnapshotPricesID] = steps.SnapshotInitialPrices
 		handlers[StepPersistBatchID] = steps.PersistBatch
+		handlers[DailyCheckpointStepID] = steps.DailyCheckpointLoop
+	} else {
+		handlers[DailyCheckpointStepID] = noopStep(logger, DailyCheckpointStepID)
 	}
-	handlers[DailyCheckpointStepID] = noopStep(logger, DailyCheckpointStepID)
 	return handlers
 }
 

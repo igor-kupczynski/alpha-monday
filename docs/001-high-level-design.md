@@ -74,7 +74,7 @@ Steps:
 Hatchet patterns:
 - Cron: weekly kickoff.
 - Workflow state: initial prices, benchmark baseline, pick list, batch id.
-- Durable sleep: daily schedule within the same workflow.
+- Sleep loop: daily schedule within the same workflow (in-process sleeper until Go SDK supports durable sleep).
 - Fan-out: per-ticker price fetch (plus SPY).
 - Rate limiting: price fetch step concurrency and per-minute caps.
 - Retries: transient API failures with exponential backoff.

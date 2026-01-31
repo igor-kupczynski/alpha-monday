@@ -15,6 +15,11 @@ func TestSnapshotPreviousClosesSuccess(t *testing.T) {
 		"AAPL": "178.10",
 		"MSFT": "342.55",
 	}
+	tradingDays := map[string]string{
+		"SPY":  "2026-01-03",
+		"AAPL": "2026-01-03",
+		"MSFT": "2026-01-03",
+	}
 
 	var mu sync.Mutex
 	var order []string
@@ -27,7 +32,8 @@ func TestSnapshotPreviousClosesSuccess(t *testing.T) {
 
 		payload := map[string]map[string]string{
 			"Global Quote": {
-				"08. previous close": prices[symbol],
+				"08. previous close":     prices[symbol],
+				"07. latest trading day": tradingDays[symbol],
 			},
 		}
 		data, _ := json.Marshal(payload)
@@ -45,14 +51,23 @@ func TestSnapshotPreviousClosesSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if snapshot["SPY"] != prices["SPY"] {
-		t.Fatalf("expected SPY price %s, got %s", prices["SPY"], snapshot["SPY"])
+	if snapshot["SPY"].PreviousClose != prices["SPY"] {
+		t.Fatalf("expected SPY price %s, got %s", prices["SPY"], snapshot["SPY"].PreviousClose)
 	}
-	if snapshot["AAPL"] != prices["AAPL"] {
-		t.Fatalf("expected AAPL price %s, got %s", prices["AAPL"], snapshot["AAPL"])
+	if snapshot["SPY"].TradingDay != tradingDays["SPY"] {
+		t.Fatalf("expected SPY trading day %s, got %s", tradingDays["SPY"], snapshot["SPY"].TradingDay)
 	}
-	if snapshot["MSFT"] != prices["MSFT"] {
-		t.Fatalf("expected MSFT price %s, got %s", prices["MSFT"], snapshot["MSFT"])
+	if snapshot["AAPL"].PreviousClose != prices["AAPL"] {
+		t.Fatalf("expected AAPL price %s, got %s", prices["AAPL"], snapshot["AAPL"].PreviousClose)
+	}
+	if snapshot["AAPL"].TradingDay != tradingDays["AAPL"] {
+		t.Fatalf("expected AAPL trading day %s, got %s", tradingDays["AAPL"], snapshot["AAPL"].TradingDay)
+	}
+	if snapshot["MSFT"].PreviousClose != prices["MSFT"] {
+		t.Fatalf("expected MSFT price %s, got %s", prices["MSFT"], snapshot["MSFT"].PreviousClose)
+	}
+	if snapshot["MSFT"].TradingDay != tradingDays["MSFT"] {
+		t.Fatalf("expected MSFT trading day %s, got %s", tradingDays["MSFT"], snapshot["MSFT"].TradingDay)
 	}
 	if len(order) == 0 || order[0] != "SPY" {
 		t.Fatalf("expected SPY to be fetched first, got %v", order)
@@ -64,12 +79,17 @@ func TestSnapshotPreviousClosesMissingPriceFails(t *testing.T) {
 		"SPY":  "401.25",
 		"AAPL": "",
 	}
+	tradingDays := map[string]string{
+		"SPY":  "2026-01-03",
+		"AAPL": "2026-01-03",
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		symbol := r.URL.Query().Get("symbol")
 		payload := map[string]map[string]string{
 			"Global Quote": {
-				"08. previous close": prices[symbol],
+				"08. previous close":     prices[symbol],
+				"07. latest trading day": tradingDays[symbol],
 			},
 		}
 		data, _ := json.Marshal(payload)
