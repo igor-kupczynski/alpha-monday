@@ -17,3 +17,8 @@
 - Lint: `make lint` (requires `staticcheck`).
 - Go: 1.25.6 (pinned via `go.mod` toolchain).
 - DB-backed tests run in multiple packages; keep the DB running for the full test run.
+
+## Skills sync (hatchet)
+- The hatchet skill is vendored as a git subtree at `.skills/hatchet`.
+- To update it to the latest upstream:
+  - `git subtree pull --prefix .skills/hatchet https://github.com/igor-kupczynski/hatchet-skill main --squash`

@@ -1,6 +1,6 @@
 # Alpha Monday - DevEx Tooling (Makefile)
 
-Date: 2026-01-30
+Date: 2026-01-31
 Status: draft
 
 ## Goals
@@ -30,6 +30,11 @@ Use a top-level Makefile with a dynamic `help` target and a minimal set of stand
 - Test targets assume the default `DATABASE_URL` unless overridden by the environment.
 - Go toolchain is pinned in `go.mod` (Go 1.25.6).
 - CI runs `make lint` and `go test ./...` (without `make test`) to avoid docker compose.
+- The hatchet skill is vendored as a git subtree at `.skills/hatchet`; update with:
+
+```bash
+git subtree pull --prefix .skills/hatchet https://github.com/igor-kupczynski/hatchet-skill main --squash
+```
 - Install `staticcheck` once with:
 
 ```bash
