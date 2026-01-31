@@ -162,6 +162,7 @@ vs_benchmark_pct = absolute_return_pct - benchmark_return_pct
 - Environment variables for API keys.
 - CI builds and tags images; deployments are manual approvals.
 - Migrations run as a separate approved job.
+- Container images are built from `Dockerfile.api` and `Dockerfile.worker` on release tags.
 
 ## Future Ideas
 - Add a simple dashboard UI.

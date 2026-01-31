@@ -146,10 +146,11 @@ References: HLD `docs/001-high-level-design.md` (Deployment), LLD `docs/009-depl
 - Migrations run as a separate job with explicit approval.
 
 ### Implementation
-- [ ] Containerize API and worker.
-- [ ] Deploy worker to Scaleway; configure Hatchet cron.
-- [ ] Deploy API and connect to Neon.
-- [ ] Apply migrations on Neon before first deploy.
+- [x] Containerize API and worker.
+- [x] Add deployment README and CI image build workflow (tagged images).
+- [ ] Deploy worker to Scaleway; configure Hatchet cron. (manual)
+- [ ] Deploy API and connect to Neon. (manual)
+- [ ] Apply migrations on Neon before first deploy. (manual)
 
 **Working feature:** System runs end-to-end on hosted infrastructure.
 

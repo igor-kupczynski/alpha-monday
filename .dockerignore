@@ -1,0 +1,9 @@
+.git
+.gitignore
+.github
+docs
+scripts
+migrations
+**/*_test.go
+Dockerfile*
+README.md

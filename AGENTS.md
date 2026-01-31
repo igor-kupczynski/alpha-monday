@@ -1,5 +1,6 @@
 - `docs/` contains design docs (e.g., `docs/001-high-level-design.md`): both high-level design (HLD) and low-level design (LLD) and implementation plans.
 - When working out of an implementation plan, use checkboxes to track progress. Also update the plan as needed when you iterate on it.
+- Deployment and container build guidance lives in `README.md`; do not store secrets in local `.env` files.
 
 ## Workflow intent
 - Work should flow from HLD → LLD → tests → code.
