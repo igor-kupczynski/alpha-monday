@@ -1,0 +1,15 @@
+{
+  "skills": [
+    {
+      "name": "hatchet",
+      "repo": "https://github.com/igor-kupczynski/hatchet-skill",
+      "path": "skills/hatchet",
+      "commit": "feebda7f8c828ad8d9b15bf662be3a0747025b07",
+      "checksum": "d85bd4ac13c634fe3b35fd06de05eef1fa7e2f32953b4f994ca4cb2ed9aebd26",
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE"
+      }
+    }
+  ]
+}
